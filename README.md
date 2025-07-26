@@ -30,5 +30,5 @@ I do  contests on different platforms like [code4rena](https://code4rena.com/) a
 ## Private Audit
 |Protocol|Description|Findings|nSloc|
 |:------|:----------|:-------|:--:|:----:|
-|[Venice](Staking Protocol)|[1 H, 1 M](Contests/2025-01-Venice.md)| 200 |
+|[Venice](Staking Protocol)|Venice Staking Protocol| [1 H, 1 M](Contests/2025-01-Venice.md)| 200 |
 
