@@ -31,6 +31,11 @@ I do  contests on different platforms like [code4rena](https://code4rena.com/) a
 |:------|:----------|:-------|:--:|:----:|
 |[JIGSAW](https://cantina.xyz/code/7a40c849-0b35-4128-b084-d9a83fd533ea/findings/465)|Jigsaw Finance: A CDP-based stablecoin protocol| [1 H](Contests/2025-06-jigsaw.md)|- | - |
 
+
+|Contest|Description|Findings|Rank|Report|
+|:------|:----------|:-------|:--:|:----:|
+|[METROPOLIS]()|Liquidity-Vaults-books| [2 M](Contests/2025-04-Metropolis.md)|- | - |
+
 ## Private Audit
 |Protocol|Description|Findings|nSloc|
 |:------|:----------|:-------|:--:|:----:|
