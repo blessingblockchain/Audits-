@@ -14,10 +14,21 @@ I do  contests on different platforms like [code4rena](https://code4rena.com/) a
 |:------|:----------|:-------|:--:|:----:|
 |[Soon](https://cantina.xyz/competitions/08c2b0b4-8449-4136-82a2-7074ccdfffac/leaderboard)|SVM, layer2, OP Stack|[1 H, 4 L](Contests/2024-12-soon.md)|4th| - |
 
+|Contest|Description|Findings|Rank|Report|
+|:------|:----------|:-------|:--:|:----:|
+|[RAAC](https://codehawks.cyfrin.io/c/2025-02-raac)|Regnum Aurum Acquisition Corp| [6 H, 8 M, 3 L](Contests/2025-02-Raac.md)|- | - |
 
 ## Audit Contests
 |Contest|Description|Findings|Rank|Report|
 |:------|:----------|:-------|:--:|:----:|
 |[Soon](https://cantina.xyz/competitions/08c2b0b4-8449-4136-82a2-7074ccdfffac/leaderboard)|SVM, layer2, OP Stack|[1 H, 4 L](Contests/2024-12-soon.md)|4th| - |
 
+|Contest|Description|Findings|Rank|Report|
+|:------|:----------|:-------|:--:|:----:|
+|[RAAC](https://codehawks.cyfrin.io/c/2025-02-raac)|Regnum Aurum Acquisition Corp| [6 H, 8 M, 3 L](Contests/2025-02-Raac.md)|- | - |
+
+## Private Audit
+|Protocol|Description|Findings|nSloc|
+|:------|:----------|:-------|:--:|:----:|
+|[Venice Protocol](Staking Protocol)|[1 H, 1 M](Contests/2025-01-Venice.md)| 200 |
 
