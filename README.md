@@ -5,7 +5,9 @@ This is my Audit portfolio collecting the contests I participated in and my enga
 ## About demonhat
 I am an Independent Web3 security researcher, focusing on Dapps, and DeFi.
 
-I do  contests on different platforms like [code4rena](https://code4rena.com/) and [Cantina](https://www.sherlock.xyz/).
+This is a portfolio of my profile on [Cantina](https://cantina.xyz/)
+
+I do contests on different platforms like [code4rena](https://code4rena.com/) and [Cantina](https://www.sherlock.xyz/).
 
 
 
