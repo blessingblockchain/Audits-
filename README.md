@@ -41,8 +41,8 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 ## Private Audit
 |Protocol|Description|Findings|nSloc|
 |:------|:----------|:-------|:--:|:----:|
-|[Venice]()|Venice Staking Protocol| [1 H, 1 M](Contests/2025-01-Venice.md)|- |- | 
+|[VENICE]()|Venice Staking Protocol| [1 H, 1 M](Contests/2025-01-Venice.md)|- |- | 
 
 |Contest|Description|Findings|Rank|Report|
 |:------|:----------|:-------|:--:|:----:|
-|[METROPOLIS]()|Liquidity-Vaults-books| [2 M](Contests/2025-04-Metropolis.md)|- | - |
+|[VENICE]()|Liquidity-Vaults-books| [2 M](Contests/2025-04-Metropolis.md)|- | - |
