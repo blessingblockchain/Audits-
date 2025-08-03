@@ -45,4 +45,4 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 
 |Contest|Description|Findings|Rank|Report|
 |:------|:----------|:-------|:--:|:----:|
-|[VENICE]()|Liquidity-Vaults-books| [1 H, 1 M](Contests/2025-04-Metropolis.md)|- | - |
+|[VENICE]()|Liquidity-Vaults-books| [1 H, 1 M](Contests/2025-01-Venice.md)|- | - |
