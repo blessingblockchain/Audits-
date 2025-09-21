@@ -741,7 +741,7 @@ if(totalWithdrawable > 0){
 ## Description.
 `getMyPlumePrice()` in `MyPlumeFeed.sol` incorrectly calculates the ETH backing per `myPLUME token` by subtracting accumulated rewards instead of adding them. 
 
-In liquid staking tokens (LSTs), the standard mechanism is that rewards increase the backing value without minting new tokens - `"by adding the net rewards back to the PlumeMinter ETH pool without minting new myPLUME tokens, the total ETH backing each myPLUME token increases. This means if you redeem your myPLUME later, you'll get more ETH back than you would have before the rewards were added!"` However, the current calculation treats rewards as a liability rather than an asset.
+In liquid staking tokens (LSTs), the standard mechanism is that rewards increase the backing value without minting new tokens - `"by adding the net rewards back to the PlumeMinter ETH pool without minting new myPLUME tokens, the total ETH backing each myPLUME token increases. This means if you redeem your myPLUME later, you'll get more ETH back than you would have before the rewards were added!"` However, the current calculation treats rewards as a liability rather than an asset. check here for more proof: (https://www.fireblocks.com/report/liquid-staking-101/#:~:text=ETH%20holders%20depositing%20ETH%20into%20a%20liquid%20staking%20platform%20receive%20a%20new%20token%20representing%20an%20access%20key%20to%20the%20pool%20(a%20Liquid%20Staking%20Token%20%E2%80%9CLST%E2%80%9D).%20LSTs%20can%20later%20be%20redeemed%20for%20underlying%20ETH%20(plus%20accrued%20staking%20rewards).)[here]
 
 ## Root cause 
 
