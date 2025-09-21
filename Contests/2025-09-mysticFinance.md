@@ -758,7 +758,16 @@ The error is the final term - `getMyPlumeRewards()` which subtracts accumulated 
 
 ## Proof of concept
 
-I mocked the required contracts because the hardcoded adddresses in the forkedtests were failing with "NotActivated" error. 
+I mocked the required contracts because the hardcoded adddresses in the forkedtests were failing with "NotActivated" error. There is an assertion test originally that the protocol wrote: 
+
+```solidity
+    function test_getMyPlumePrice() public {
+        assertApproxEqRel(feed.getMyPlumePrice(), 1e18, 5e16);
+    }
+```
+I used it in my poc just to assert the deviation this bug would cause, same assertion also.
+check below: 
+
 
 ```solidity
 // SPDX-License-Identifier: AGPL-3.0-only
