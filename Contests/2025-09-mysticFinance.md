@@ -5,6 +5,7 @@ My Finding Summay
 |ID|Title|Severity|
 |:-:|:---|:------:|
 |[H-01](#h-01-missing-validation-of-`withdrawn-==-totalWithdrawable`-in-`withdraw`-function-can-cause-phantom-eth-and-DOS-on-legitimate-withdrawals)|Missing validation of `withdrawn == totalwithdrawable` in `withdraw` fucntion can cause phantom eth and DOS on legitimate withdrawals.|HIGH|
+|[H-02](#h-02-Non-Native-Historical-Reward-Tokens-Stuck-in-`stPlumeMinter.sol`-Leading-to`Complete-Loss-of-Funds)|Non-Native Historical Reward Tokens Stuck in `stPlumeMinter.sol` Leading to Complete Loss of Funds.|HIGH|
 ||||
 |[M-01](#m-01-wrong-math-calculation-in-my-plume-feed-token-price)|Wrong math calculation in my MyplumeFeed Token price. |MEDIUM|
 |[M-02](#m-02-a-validator-percentage-limit-can-be-bypassed-in-`stPlumeMinter.sol`-when-`validatorId!=0`)|A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.|MEDIUM|
@@ -732,6 +733,92 @@ if(totalWithdrawable > 0){
 
 
 
+
+## [H-02] Non-Native Historical Reward Tokens Stuck in `stPlumeMinter.sol` Leading to Complete Loss of Funds.
+
+## Description
+
+In the `stPlumeMinter.sol` contract, rewards accrued from the `external PlumeStaking contract` for non-native reward tokens (e.g., pUSD) become permanently inaccessible if those tokens are removed from active status in PlumeStaking and transitioned to historical reward tokens.
+
+The mechanics are as follows:
+
+- `stPlumeMinter.sol` stakes into PlumeStaking on behalf of users, using its own address as the `"user"` in `PlumeStaking`. Rewards accrue in PlumeStaking per token `(native like PLUME/ETH and non-native ERC20-like tokens)`.
+
+- PlumeStaking distinguishes between active reward tokens `(in $.rewardTokens array and $.isRewardToken[token] = true)` and historical ones `(in $.historicalRewardTokens, after removal via removeRewardToken(token) by REWARD_MANAGER_ROLE)`. Removal stops new accruals `(sets rate to 0, creates final checkpoint)` but preserves existing accrued rewards for claiming.
+
+- In PlumeStaking:
+
+`claim(token)`: Claims a specific token `(active or historical)` across all validators.
+`claim(token, validatorId)`: Claims a specific token from one validator.
+`claimAll()`: Claims only active tokens `(iterates $.rewardTokens)`, skipping historical ones.
+
+
+In `stPlumeMinter: (CLAIMER_ROLE restricted)`:
+
+- `claim(uint16 validatorId)`: Calls `plumeStaking.claim(nativeToken, validatorId)`, where `nativeToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` (placeholder for native token like PLUME/ETH). 
+- Loads claimed amount via `_loadRewards(amount)` into `stPlumeRewards.sol` for distribution.
+- `claimAll()`: Calls `plumeStaking.claimAll()`, which only handles active tokens. 
+
+For each claimed token:
+
+- If `token == nativeToken`, loads via `_loadRewards(amount)`.
+- For non-native tokens, transfers to `stPlumeMinter.sol` but leaves them in contract balance `(comment: "let the erc20 tokens go to the contract, we will withdraw with rescue token, convert to native token and load rewards")`. No automatic loading or distribution for non-native.
+
+- No function in `stPlumeMinter.sol` allows calling `plumeStaking.claim(non_native_token)` or `plumeStaking.claim(non_native_token, validatorId)`. Claims are hardcoded to native or active-only.
+
+
+Vulnerability Scenario:
+
+- `Stake` via `stPlumeMinter.sol` (e.g., 1k PLUME at timestamp 1,576,800,000); rewards accrue for `native (PLUME)` and `non-native (pUSD, assuming active)`.
+- `pUSD` removed in `PlumeStaking (timestamp 1,576,886,400)`; becomes historical, accruals stop, but Day 1–2 rewards remain claimable via targeted `claim(pUSD)`.
+- Call `stPlumeMinter.claim(validatorId)`: Claims only native PLUME from that validator, loads to rewards (distributes as yield to frxETH holders).
+- Call `stPlumeMinter.claimAll()`: Claims remaining active tokens (PLUME), skips pUSD. No pUSD transferred.
+
+
+Result: pUSD rewards stuck in `PlumeStaking treasury/tracking under address(stPlumeMinter)`. Not claimable or distributable to users.
+
+## IMpact 
+
+Impact
+
+Severity: High (permanent fund loss).
+1. Affected Assets: All accrued non-native historical rewards (e.g., pUSD tokens) for all users/stakes in `stPlumeMinter.sol`. 
+
+2. Financial Loss: Users (frxETH holders) lose yield from historical tokens post-removal. If a major non-native token (e.g., stablecoin like pUSD) is removed after significant accruals, loss could be substantial (e.g., proportional to stake duration before removal).
+
+3. Scope: Affects all validators and all users, as `stPlumeMinter.sol` pools stakes. No per-user isolation—entire contract's accruals for the token are bricked.
+4. Exploitation: No malicious action needed; triggered by legitimate token removal (e.g., deprecating a reward token). Gov/REWARD_MANAGER_ROLE can cause this unintentionally.
+
+## Fix 
+
+1. Add new functions in `stPlumeMinter.sol`:
+
+```solidity
+function claimSpecificToken(address token) external nonReentrant onlyRole(CLAIMER_ROLE) returns (uint256) {
+    uint256 amount = plumeStaking.claim(token);
+    if (amount > 0 && token == nativeToken) _loadRewards(amount);
+    // For non-native: Add conversion or rescue logic if needed.
+    emit RewardClaimed(address(this), token, amount);
+    return amount;
+}
+
+function claimSpecificTokenFromValidator(address token, uint16 validatorId) external nonReentrant onlyRole(CLAIMER_ROLE) returns (uint256) {
+    uint256 amount = plumeStaking.claim(token, validatorId);
+    if (amount > 0 && token == nativeToken) _loadRewards(amount);
+    emit ValidatorRewardClaimed(address(this), token, validatorId, amount);
+    return amount;
+}
+```
+
+-NB: The bug causes historical non-native rewards (e.g., pUSD) to remain stuck in `PlumeStaking's treasury`, tracked as claimable for `address(stPlumeMinter)`. These rewards are never transferred to `stPlumeMinter.sol` because the contract's claim functions `(claim() and claimAll())` cannot target historical tokens—they are hardcoded to native or active-only.
+
+## Poc
+
+Add the code to a file and run it with `via--ir`: 
+
+```solidity
+
+```
 ---
 ---
 ---
