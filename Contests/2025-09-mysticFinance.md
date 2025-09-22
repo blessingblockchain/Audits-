@@ -2411,9 +2411,7 @@ When no new rewards are accrued, `stPlumeRewards.rewardPerToken()` remains stati
 
 1.  when no new rewards are accrued, as the static reward amount is subtracted indefinitely.
 
-## Fix
 
-1. ALways add the rewards dont substract. 
 
 
 
