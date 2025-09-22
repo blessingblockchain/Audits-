@@ -8,9 +8,10 @@ My Finding Summay
 ||||
 |[M-01](#m-01-wrong-math-calculation-in-my-plume-feed-token-price)|Wrong math calculation in my MyplumeFeed Token price. |MEDIUM|
 |[M-02](#m-02-a-validator-percentage-limit-can-be-bypassed-in-`stPlumeMinter.sol`-when-`validatorId!=0`)|A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.|MEDIUM|
-|[M-03](#m-04-Unstaking-calculates-user-share-at-request-time,-ignoring-slashing-leading-to-DOS-and-unfair-distribution-in-`stPlumeMinter.sol`)|Unstaking Calculates User Share at Request Time, Ignoring Slashing  Leading to DoS and Unfair Distribution in `stPlumeMinter.sol` |MEDIUM|
-|[M-04](#m-05-Dos-in-`removeValidator`-function-due-to-unbounded-loop-in-OperatorRegistry.sol`)|DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`  |MEDIUM|
-|[M-05](#m-06-Dos-in-`unstakefunction`-when-no-specific-validator-is-provided)|Dos in `unstakefunction` when no specific validator is provided. |MEDIUM|
+|[M-03](#m-03-In-no-reward-scenario,-there-would-be-a-persistent-undervaluation-of-myPlumeTokens-in-`myPlumeFeed.sol`)|In no reward scenario, there would be a persistent undervaluation of myPlumeTokens in `myPlumeFeed.sol` |MEDIUM|
+|[M-04](#m-04-Unstaking-calculates-user-share-at-request-time,-ignoring-slashing-leading-to-DOS-and-unfair-distribution-in-`stPlumeMinter.sol`)|Unstaking Calculates User Share at Request Time, Ignoring Slashing  Leading to DoS and Unfair Distribution in `stPlumeMinter.sol` |MEDIUM|
+|[M-05](#m-05-Dos-in-`removeValidator`-function-due-to-unbounded-loop-in-OperatorRegistry.sol`)|DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`  |MEDIUM|
+|[M-06](#m-06-Dos-in-`unstakefunction`-when-no-specific-validator-is-provided)|Dos in `unstakefunction` when no specific validator is provided. |MEDIUM|
 ||||
 |[L-01](#l-01-the-21-day-batchUnstakeInterval-can-be-bypassed-in-the-processBatchUnstake-function-`stPlumeMinter.sol`)|The 21 day `batchUnstakeInterval` can be bypassed in the `processBatchUnstake` fucntion in `stPlumeMinter.sol`. |LOW|
 |[L-02](#l-02-missing-reward-rate-validation-in-`stPlumeRewards.sol`)|Missing reward rate validation in `stPlumeReward.sol`. |LOW|
@@ -1498,11 +1499,40 @@ contract StPlumeMinterForkTestMain is Test {
 submitForValidator(1) → _submit(user, 1) → _depositEther(amount, 1) → Direct staking (NO PERCENTAGE CHECK)
 ```
 
+## [M-03] In no reward scenario, there would be a persistent undervaluation of myPlumeTokens in `myPlumeFeed.sol`
+
+## Description
+
+The `getMyPlumePrice()` function in `MyPlumeFeed.sol` undervalues myPLUME tokens due to the incorrect subtraction of accumulated rewards in `getTotalDeposits()`. This issue exists when no new rewards are accrued for an extended period. The `getMyPlumeRewards()` function continues to return a static reward amount from the last reward cycle `(via stPlumeRewards.rewardPerTokenStored)`, which is subtracted from the total backing, perpetuating a 6% undervaluation of `myPLUME` tokens until the rewards are reset or the formula is corrected. This misleads users and DeFi integrations relying on the reported price.
+
+## Root Cause
+
+The `getTotalDeposits()` function of `MyPlumeFeed.sol` subtracts `getMyPlumeRewards():`
+
+```solidity
+function getTotalDeposits() public view returns (uint256) {
+    return getPlumeStakedAmount() + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalInstantUnstaked() - getMyPlumeRewards();
+}
+```
+When no new rewards are accrued, `stPlumeRewards.rewardPerToken()` remains static after the reward cycle ends `(block.timestamp >= rewardsCycleEnd)`, as `rewardPerTokenStored` is not updated without new calls to `stPlumeRewards.loadRewards`. Consequently, `getMyPlumeRewards()` returns the same accumulated reward amount, which is continuously subtracted, causing persistent undervaluation.
+
+## Impact
+
+1.  when no new rewards are accrued, as the static reward amount is subtracted indefinitely.
+
+## Fix
+
+1. ALways add the rewards dont substract. 
 
 
 
 
-## [M-03] Unstaking Calculates User Share at Request Time, Ignoring Slashing Leading to DoS and Unfair Distribution in `stPLumeMinter.sol`
+
+
+
+
+
+## [M-04] Unstaking Calculates User Share at Request Time, Ignoring Slashing Leading to DoS and Unfair Distribution in `stPLumeMinter.sol`
 
 ## Description
 
