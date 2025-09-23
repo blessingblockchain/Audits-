@@ -1639,6 +1639,17 @@ The root cause stems from:
 
 - Unstake Logic in `stPlumeMinter.sol`: In `_unstake(uint256 amount, bool rewards, uint16 _validatorId)`, when `_validatorId == 0 (default for unstake())`, it loops through all validators and skips slashed ones `(where active = false and stakedAmount = 0)`. It then queues unstakes on healthy validators, allowing withdrawals from the remaining pool regardless of original allocation.
 
+## Vulnebility scenario: 
+
+1. Two validators (A and B) in PlumeStaking.
+2. 10 users stake via `stPlumeMinter.sol`: Users 1-5 stake 10k PLUME each to validator A (total 50k on A); users 6-10 stake 10k each to B (total 50k on B). Each receives 10k frxETH; total frxETH supply = 100k.
+3. Validator A is slashed: `PlumeStaking` forfeits 50k PLUME on A; `validatorTotalStaked[A] = 0`, `active = false`. Total claimable PLUME now 50k (from B).
+4. Users 1-5 (originally on A) call `unstake(10k) (_validatorId=0)`: Loop skips A (fails active/staked checks) and queues unstakes on B, processing via `_processBatchUnstake and plumeStaking.unstake(B, ...)`.
+5. Users 1-5 successfully withdraw 10k PLUME each from B's pool (total 50k drained).
+6. Users 6-10 attempt unstake: No remaining PLUME; `unstakes` fail `(remainingToUnstake != 0)`, but they hold 50k frxETH (now worthless, potentially sold on market).
+
+The slashing mechanism in `PlumeStaking` permanently forfeits the delegated tokens for the affected validator, setting the staked amount to 0, and the `stPlumeMinter` contract has no built-in recovery or compensation logic.
+
 ```solidity
 function _unstake(uint256 amount, bool rewards, uint16 _validatorId) internal returns (uint256 amountUnstaked) {
     // ... (burn frxETH if not rewards)
