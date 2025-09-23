@@ -6,7 +6,7 @@ My Finding Summay
 |:-:|:---|:------:|
 |[H-01](#h-01-missing-validation-of-`withdrawn-==-totalWithdrawable`-in-`withdraw`-function-can-cause-phantom-eth-and-DOS-on-legitimate-withdrawals)|Missing validation of `withdrawn == totalwithdrawable` in `withdraw` fucntion can cause phantom eth and DOS on legitimate withdrawals.|HIGH|
 |[H-02](#h-02-Non-Native-Historical-Reward-Tokens-Stuck-in-`stPlumeMinter.sol`-Leading-to`Complete-Loss-of-Funds)|Non-Native Historical Reward Tokens Stuck in `stPlumeMinter.sol` Leading to Complete Loss of Funds.|HIGH|
-[H-03](#h-03-when-a-validator-slash-occurs-in-plumeStaking.sol,-the-minted-synthetic-tokens-aka-frxETH-is-still-in-possession-of-the-user-and-can-be-used-to -steal-from-other-users-via-pooled-unstakes-in-`stPlumeMinter.sol`)|When a validator slash occurs in plumeStaking.sol, the minted synthetic tokens aka frxETH is still in possession of the user and can be used to steal from other users via pooled unstakes in `stPlumeMinter.sol`|HIGH|
+[H-03](#h-03-when-a-validator-slash-occurs-in-plumeStaking.sol-the-minted-synthetic-tokens-aka-frxETH-is-still-in-possession-of-the-user-and-can-be-used-to-steal-from-other-users-via-pooled-unstakes-in-`stPlumeMinter.sol`)|When a validator slash occurs in plumeStaking.sol, the minted synthetic tokens aka frxETH is still in possession of the user and can be used to steal from other users via pooled unstakes in `stPlumeMinter.sol`|HIGH|
 ||||
 |[M-01](#m-01-wrong-math-calculation-in-my-plume-feed-token-price)|Wrong math calculation in my MyplumeFeed Token price. |MEDIUM|
 |[M-02](#m-02-a-validator-percentage-limit-can-be-bypassed-in-`stPlumeMinter.sol`-when-`validatorId!=0`)|A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.|MEDIUM|
