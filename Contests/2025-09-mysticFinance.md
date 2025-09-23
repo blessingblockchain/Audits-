@@ -7,6 +7,7 @@ My Finding Summay
 |[H-01](#h-01-missing-validation-of-`withdrawn-==-totalWithdrawable`-in-`withdraw`-function-can-cause-phantom-eth-and-DOS-on-legitimate-withdrawals)|Missing validation of `withdrawn == totalwithdrawable` in `withdraw` fucntion can cause phantom eth and DOS on legitimate withdrawals.|HIGH|
 |[H-02](#h-02-Non-Native-Historical-Reward-Tokens-Stuck-in-`stPlumeMinter.sol`-Leading-to`Complete-Loss-of-Funds)|Non-Native Historical Reward Tokens Stuck in `stPlumeMinter.sol` Leading to Complete Loss of Funds.|HIGH|
 [H-03](#h-03-when-a-validator-slash-occurs-in-plumeStaking.sol-the-minted-synthetic-tokens-aka-frxETH-is-still-in-possession-of-the-user-and-can-be-used-to-steal-from-other-users-via-pooled-unstakes-in-`stPlumeMinter.sol`)|When a validator slash occurs in plumeStaking.sol, the minted synthetic tokens aka frxETH is still in possession of the user and can be used to steal from other users via pooled unstakes in `stPlumeMinter.sol`|HIGH|
+|[H-04](#h-04-Reward-Claim-Calculation-Function-is-Wrong-and-Will-Lead-to-Much-and-Much-LesS-Rewards-Claimable-for-Every-User-in-PLUME.)|Reward Claim Calculation Function is Wrong and Will Lead to Much and Much Less Rewards Claimable for Every User in PLUME.|HIGH|
 ||||
 |[M-01](#m-01-wrong-math-calculation-in-my-plume-feed-token-price)|Wrong math calculation in my MyplumeFeed Token price. |MEDIUM|
 |[M-02](#m-02-a-validator-percentage-limit-can-be-bypassed-in-`stPlumeMinter.sol`-when-`validatorId!=0`)|A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.|MEDIUM|
@@ -14,6 +15,7 @@ My Finding Summay
 |[M-04](#m-04-Unstaking-calculates-user-share-at-request-time,-ignoring-slashing-leading-to-DOS-and-unfair-distribution-in-`stPlumeMinter.sol`)|Unstaking Calculates User Share at Request Time, Ignoring Slashing  Leading to DoS and Unfair Distribution in `stPlumeMinter.sol` |MEDIUM|
 |[M-05](#m-05-Dos-in-`removeValidator`-function-due-to-unbounded-loop-in-OperatorRegistry.sol`)|DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`  |MEDIUM|
 |[M-06](#m-06-Dos-in-`unstakefunction`-when-no-specific-validator-is-provided)|Dos in `unstakefunction` when no specific validator is provided. |MEDIUM|
+|[M-07](#m-07-Inflated-Cooldown-Timestamps-in-`stPlumeMinter.sol`-Leading-to-Excessive-Withdrawal-Delays-than-required)| Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required. |MEDIUM|
 ||||
 |[L-01](#l-01-the-21-day-batchUnstakeInterval-can-be-bypassed-in-the-processBatchUnstake-function-`stPlumeMinter.sol`)|The 21 day `batchUnstakeInterval` can be bypassed in the `processBatchUnstake` fucntion in `stPlumeMinter.sol`. |LOW|
 |[L-02](#l-02-missing-reward-rate-validation-in-`stPlumeRewards.sol`)|Missing reward rate validation in `stPlumeReward.sol`. |LOW|
@@ -1734,6 +1736,840 @@ function getValidatorInfo(uint16 validatorId) external view returns (PlumeStakin
 This is unique case that needs to be handled. The fix i can think of right now is to have virtual balances instead and perphaps implement a better `_unstake`
 fucntion that takes this edge case into consideration. 
 
+
+## [H-04] Reward Claim Calculation Function is Wrong and Will Lead to Much and Much Less Rewards Claimable for Every User in PLUME. 
+
+## Description
+
+Disclaimer: I have clearfully analysed this vul and seen that it has a lot of impacts which does not require same fix. But i have written an overal poc showing each impacts in it and i would advise take a good look at this so as to understand the bug completely and each impacts/risks. 
+
+In the current implementation of the `stPlumeRewards.sol` contract, user earned rewards are `restaked` and can be claimed anytime by the users. When the user wants to claim their earned rewards, they call the `unstakeRewards()` function of the `stPlumeMinter.sol` contract which then calculates how much the PLUME rewards the user is owed.  To understand the issues with the current reward calculations mechanism in the `stPlumeRewards.sol` contract, I will breakdown the whole function flow to actual numbers including how `PlumeStaking` reward calculation works:
+
+1. In `PlumeStaking.sol`, the integrated protocol, users earn rewards in `APYs`. That means if the APY is 5% per year, then the user will earn 5% / 365 days relative to their `total staked / delegated amount`. This continuous accrual model ensures rewards build up over time based on the actual staked PLUME, but the integration with `stPlumeRewards.sol` fails to properly reflect this in user claims, leading to underpayments where users receive significantly less immediate claimable rewards than the yields actually earned by the contract.
+
+2. Let's assume the `stPlumeMinter.sol`  kicks off with `1 validator`. We also have 1 sole user/staker (for simplicity sake) who staked 100 PLUME and the `totalSupply()` of frxETH synthetic tokens then minted is also 100 frxETH. To demonstrate dilution (where new deposits unfairly share in deferred past rewards), I'll later introduce a second user, but start with this single-user setup to isolate the core underpayment issue.
+
+3. The stake happened at `timestamp 1,576,800,000`. 24 hours later `(at timestamp: 1,576,886,400)`, the address with `CLAIMER_ROLE` executes `claim()` to claim PLUME rewards earned thus far for the past 24 hours. This claim process in `stPlumeMinter` involves checking `getClaimableReward()` and then calling `plumeStaking.claim(nativeToken, validatorId)`, which forwards the claimed amount to `loadRewards()` in `stPlumeRewards`.
+
+4. Let's assume the amount of claimed PLUME (earned) is 10 PLUME, the `stPlumeRewards.loadRewards{value: amount}()` function triggers in the `stPlumeRewards` contract where the amount args in this function call is 10e18. That then goes on to trigger the `updateReward()` modifier with `address(0)`. Inside that modifier, we have this:
+
+```solidity
+modifier updateReward(address account) { 
+    rewardPerTokenStored = rewardPerToken(); 
+    lastSync = lastTimeRewardApplicable(); 
+    if (account != address(0)) { 
+        userRewards[account] = getUserRewards(account); 
+        userRewardPerTokenPaid[account] = rewardPerTokenStored; 
+    } 
+    _; 
+}
+```
+
+`rewardPerTokenStored` will be = `0 + (((0 - 0) * 0 * 1e18) / 100e18)` which resolves to `0 rewardPerTokenStored` since this is the first execution and `rewardRate`, `lastSync` etc are not yet initialized. `lastSync` will also return 0. Next, we go back to the `stPlumeRewards.loadRewards()` function and execute `_loadRewards(10e18)`.
+
+```solidity
+function _loadRewards(uint256 reward) internal { 
+    if (reward > 0) { 
+        uint256 yieldAmount = (reward * YIELD_FEE) / RATIO_PRECISION; 
+        uint256 netReward = reward - yieldAmount; 
+        // Send fee to protocol 
+        if (yieldAmount > 0) { 
+            IstPlumeMinter(stPlumeMinter).addWithHoldFee{value: yieldAmount}(); 
+        } 
+        if (netReward > 0) { 
+            (bool success,) = stPlumeMinter.call{value: netReward}(""); // send rewards to be staked to earn more rewards 
+            require(success, "Rewards transfer failed"); 
+        } 
+        // Process net reward using Synthetix logic 
+        if (block.timestamp >= rewardsCycleEnd) { 
+            rewardRate = netReward / rewardsCycleLength; 
+        } else { 
+            uint256 remaining = rewardsCycleEnd - block.timestamp; 
+            uint256 leftover = remaining * rewardRate; 
+            rewardRate = (netReward + leftover) / rewardsCycleLength; 
+        } 
+        // Ensure reward rate is not too high 
+        // require(rewardRate <= frxETHToken.totalSupply() / rewardsCycleLength, "Provided reward too high"); 
+        lastSync = block.timestamp; 
+        rewardsCycleEnd = block.timestamp + rewardsCycleLength; // e.g 7 days from now. 
+        emit NewRewardsCycle(uint32(rewardsCycleEnd), netReward); 
+    } 
+}
+```
+This prospective spreading over `rewardsCycleLength (7 days)` is a key flaw, as it delays full attribution and enables issues like dilution if new users deposit during the deferral period.
+
+5. We are just going to assume there is no fee charged on yield to simplify the whole issue, thus we will callback into `stPlumeMinter` contract to restake those earned `10e18 PLUME: (bool success,) = stPlumeMinter.call{value: netReward}`. Next, we run into this block because `block.timestamp` is greater than `rewardsCycleEnd of 0`:
+
+```solidity
+if (block.timestamp >= rewardsCycleEnd) {
+
+```
+It sets the `rewardRate to 10e18 / 7 days (604,800 secs)` which means `rewardRate` is now: `16,534,391,534,391`. Next, we set these:
+
+```solidity
+lastSync = block.timestamp; // @note right now because that is the time we updated any of these
+rewardsCycleEnd = block.timestamp + rewardsCycleLength; // @note 7 days in the future is when this rewardsCycle of 16,534,391,534,391 rewardRate will end.
+```
+
+This reset of `lastSync` creates a zero-delta window, excluding the new load from immediate claims and causing delayed compounding, where users can't access yields promptly for reinvestment, leading to opportunity costs.
+
+6. At this point, the `claim()` transaction call ends. Now, moving on to what the issue is, say the user then triggers `unstakeRewards()` 24 hours later.
+
+```solidity
+function unstakeRewards() external nonReentrant returns (uint256 yield) { 
+    _rebalance(); 
+    stPlumeRewards.syncUser(msg.sender); //sync rewards first 
+    yield = stPlumeRewards.getUserRewards(msg.sender); 
+    if(yield == 0){return 0;} 
+    _unstake(yield, true, 0); 
+    stPlumeRewards.resetUserRewardsAfterClaim(msg.sender); 
+    require(stPlumeRewards.getUserRewards(msg.sender) == 0, "Rewards should be reset after unstaking"); 
+    return yield; 
+}
+```
+
+First, we will run into the `_rebalance()` call which again claims rewards accumulated the past 24 hours `(10e18 from 100e18 PLUME initial staked & 1e18 from 10 PLUME restake 24 hours ago)` and restakes them back `(restakes the 11 PLUME rewards)` `_rebalance` calls `_loadRewards` with the amount as 11e18 which ends up calling `stPlumeRewards.loadRewards{value: 11e18}()`. We again run into the `updateReward()` modifier and recalculate the `rewardPerTokenStored as: 0 + (((86400) * 16,534,391,534,391 * 1e18) / 100e18);` which makes `rewardPerTokenStored to become 14,285,714,285,713,824`. lastSync becomes `block.timestamp` since `rewardsCycleEnd` is now 6 days in the future (we set it yesterday to 7 days and 1 day has elapsed). account is `address(0)`, so we exit the modifier now and jump back into `_loadRewards(11e18)`, we then restake that `11e18 (bool success,) = stPlumeMinter.call{value: netReward}` At this time, `block timestamp` is not greater than `rewardsCycleEnd` (because rewardsCycleEnd) in 6 days away, thus we just increase the current reward rate by the newly claimed amount such as:
+
+```solidity
+} else { 
+    uint256 remaining = rewardsCycleEnd - block.timestamp; // 518,400 (6 days) 
+    uint256 leftover = remaining * rewardRate; // 518,400 * 16,534,391,534,391 (old reward rate) 
+    rewardRate = (netReward + leftover) / rewardsCycleLength; // (11e18 + 8,571,428,571,428,294,400) / 7 days (604800)
+}
+```
+
+remaining is 6 days (518,400), `leftover is 8,571,428,571,428,294,400 (8.571 PLUME left from yesterday's reward rate)`, rewardRate is `32,360,166,288,737` thus rewardRate has doubled now since we have accrued rewards for 2 days from `PlumeStaking`. lastSync becomes `block.timestamp` as well to register this `update and rewardsCycleEnd` becomes `block.timestamp + rewardsCycleLength (7 days)` to specify that we have extended the reward cycle to 7 days in the future (now 7 days, no longer 6 days). Now, that this execution is done, we execute `stPlumeRewards.syncUser(msg.sender);` which returns the amount of rewards the user has earned for the past 48 hours. That function is implemented like so below:
+
+```solidity
+function getUserRewards(address user) public view returns (uint256 yield) { 
+    uint256 balance = frxETHToken.balanceOf(user); 
+    return ((balance * (rewardPerToken() - userRewardPerTokenPaid[user])) / 1e18) + userRewards[user];
+}
+function rewardPerToken() public view returns (uint256) { 
+    uint256 totalSupply = frxETHToken.totalSupply(); 
+    if (totalSupply == 0) { 
+        return rewardPerTokenStored; 
+    } 
+    return rewardPerTokenStored + (((lastTimeRewardApplicable() - lastSync) * rewardRate * 1e18) / totalSupply ); 
+}
+```
+This means balance is 100e18. Then the reward returned is: `100e18 * 14,285,714,285,713,824 / 1e18 = 1,428,571,428,571,382,400 (1.4 PLUME rewards)` Why is that the case? Because, inside `rewardPerToken`, since `lastTimeRewardApplicable is block.timestamp and lastSync is also block.timestamp`, if we multiply that with 1e18, then divide by 100e18, it returns 0. Then, we return `14,285,714,285,713,824 + 0 from rewardPerToken()` call. Which then leaves the returned user yield to be: `((100e18 * (14,285,714,285,713,824 - 0)) / 1e18) + 0; = 1,428,571,428,571,382,400` This 1.428 PLUME is then added to `unstake` queue and a withdraq request for it is saved in storage for the user and we then update the reward rate for the user to specify that the user has claimed this portion of rewards to avoid double claims:
+
+```solidity
+if(yield == 0){return 0;}
+@> _unstake(yield, true, 0); 
+@> stPlumeRewards.resetUserRewardsAfterClaim(msg.sender);
+```
+
+Looking at it, this reward amount (1.428 PLUME) is the result of further breaking down 10e18 (rewards earned on day 1's stake) down by 7 days `(rewardsCycleLength)`. Because `1,428,571,428,571,382,400 * 7 = 9,999,999,999,999,676,800 (9.9999 PLUME earned on day 1) not yet inclusive of day 2's reward.`
+Now, lets take a deep look at the impacts.
+
+## Impacts 
+1. Users Receive Significantly Less Immediate Claimable Rewards Than Earned.
+Users claiming via `unstakeRewards()` get only prorated fractions of past yields (e.g., 1/7th daily in a 7-day cycle), excluding recent loads due to zero delta. In my example, after `21 PLUME earned over 2 days`, the user claims only `~1.428 PLUME `immediately (~6.8% of total), with the rest deferred. This underpayment scales with cycle length for instance, for 70 PLUME over 7 days, only ~10 PLUME claimable at cycle end, far less than earned.
+
+Here is a proof of assertion from my poc: These assertions verify that User A receives only a prorated fraction of the total rewards earned (e.g., ~4.76 PLUME instead of ~65 PLUME due to prospective spreading and dilution from User B’s deposit).
+
+```solidity
+// Verify that User A gets significantly less than the total rewards earned
+assertTrue(claimedRewards < firstRewardAmount + additionalRewards, 
+    "User A gets less than total rewards earned due to prospective distribution");
+
+// Verify that User A gets less than half of total rewards earned
+assertTrue(claimedRewards < (firstRewardAmount + additionalRewards) / 2, 
+    "User A gets less than half of total rewards earned");
+
+// The remaining rewards are deferred and spread over next 7 days
+assertTrue(deferredAmount > claimedRewards, 
+    "More rewards are deferred than immediately claimable");
+```
+
+2. Reward Dilution for Existing Holders Due to New Deposits During Deferred Periods.
+
+Deferred rewards are shared with new depositors via increased `totalSupply`, diluting originals. In my example, a second user staking 50 PLUME mid-deferral reduces the first's share to ~66.7%, dropping their claim from ~7.14 PLUME to ~4.76 PLUME, with the newcomer unfairly getting ~2.38 PLUME from prior periods.
+
+proof of assertion:  These assertions confirm that User B unfairly receives rewards from periods they didn’t contribute to, and User A’s share is diluted due to the increased totalSupply `(from 100 to 150 frxETH).`
+
+```solidity
+// User B now shares in the deferred rewards despite not contributing to early periods
+assertTrue(userBRewards > 0, "User B gets rewards despite not contributing to early periods");
+
+// User A's effective share dropped from 100% to ~66.7% due to dilution
+assertTrue(userAShare < 1e18, "User A's share diluted from 100% due to new deposits");
+assertTrue(userAShare > 0.5e18, "User A still has majority share");
+```
+
+3. Forfeiture of Rewards for Unstaking Users Before Deferred Rewards Are Claimable. 
+
+Unstaking via `unstake()` burns frxETH, forfeiting deferred rewards as accrual requires holding frxETH. In the example, after claiming ~1.428 PLUME, the user loses the remaining ~19.572 PLUME upon exit, which may benefit others or orphan if all exit.
+
+proof of assertion: These assertions show that User A loses all deferred rewards after unstaking (burning frxETH), and User B benefits from the forfeited rewards, with the protocol retaining unclaimed amounts.
+
+```solidity
+// User A forfeits all deferred rewards by burning their frxETH
+assertEq(userARewardsAfterUnstake, 0, "User A forfeits all deferred rewards");
+
+// User B should get more rewards after User A exits due to forfeited rewards
+assertTrue(userBRewardsAfterAUnstake >= userBRewards, 
+    "User B benefits from User A's forfeited rewards");
+
+// Check that the protocol still holds the deferred rewards
+assertTrue(protocolBalance > 0, "Protocol retains deferred rewards");
+
+// User B can now claim the windfall
+assertTrue(userBClaimed > 0, "User B claims windfall from User A's forfeited rewards");
+```
+
+## Root cause
+
+The fundamental root cause is the inappropriate adaptation of Synthetix's prospective reward distribution logic to Plume's continuous, APY-based accrual model in `PlumeStaking`. In `stPlumeRewards`, when rewards are loaded via `loadRewards()` and processed in `_loadRewards()`, they are divided by `rewardsCycleLength (default 7 days)` and spread forward as a new `rewardRate`, resetting `lastSync` to the current timestamp. This creates a zero-delta period immediately after loads, excluding the new rewards from calculations in `rewardPerToken()` and `getUserRewards()`. As a result, past-accrued rewards are not retroactively attributed to the periods they were earned but are instead prorated prospectively, leading to delayed and incomplete claims. The restaking of rewards without minting new frxETH (intended for frxETH appreciation) further exacerbates this by embedding value in the underlying stake without protecting it from dilution or forfeiture. Key code contributing to this: the `lastSync` reset in the `updateReward` modifier and the forward rate calculation in `_loadRewards() (e.g., rewardRate = (netReward + leftover) / rewardsCycleLength;),` which assumes pre-allocated future rewards rather than handling continuous past accruals.
+
+## Fixs
+
+This is very hard, because each impacts have to be differently accessed and fixed sufficiently as they are very different. 
+
+## POC
+Add the code to a file and run with `via--ir`
+
+```solidity
+// stPlume/test-new/stPlumeMinter.fork.t.sol
+// SPDX-License-Identifier: AGPL-3.0-only
+pragma solidity ^0.8.0;
+
+import "forge-std/Test.sol";
+import "../../src/stPlumeMinter.sol";
+import "../../src/frxETH.sol";
+import "../../src/sfrxETH.sol";
+import "../../src/OperatorRegistry.sol";
+// import "../../src/DepositContract.sol";
+import { IPlumeStaking } from "../../src/interfaces/IPlumeStaking.sol";
+import { stPlumeRewards } from "../../src/stPlumeRewards.sol";
+import { PlumeStakingStorage } from "../../src/interfaces/PlumeStakingStorage.sol";
+import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+
+// Mock PlumeStaking contract for testing
+contract MockPlumeStaking is IPlumeStaking {
+    using PlumeStakingStorage for PlumeStakingStorage.Layout;
+    
+    PlumeStakingStorage.Layout private _layout;
+    
+    // Mock data storage
+    mapping(address => PlumeStakingStorage.StakeInfo) public userStakeInfo;
+    mapping(uint16 => PlumeStakingStorage.ValidatorInfo) public validators;
+    mapping(uint16 => uint256) public validatorTotalStaked;
+    mapping(uint16 => bool) public validatorActive;
+    mapping(uint16 => uint256) public validatorCommission;
+    mapping(uint16 => uint256) public validatorStakersCount;
+    mapping(address => uint256) public userStaked;
+    mapping(address => uint256) public userCooled;
+    mapping(address => uint256) public userWithdrawable;
+    mapping(address => uint16[]) public userValidators;
+    mapping(address => mapping(uint16 => uint256)) public userValidatorStakes;
+    mapping(address => mapping(uint16 => PlumeStakingStorage.CooldownEntry)) public userCooldowns;
+    
+    address[] public rewardTokens;
+    mapping(address => bool) public isRewardTokenMap;
+    mapping(address => uint256) public rewardRates;
+    mapping(address => uint256) public totalClaimableByToken;
+    mapping(address => mapping(address => uint256)) public userClaimableRewards;
+    
+    uint256 public cooldownInterval = 1814400; // 21 days in seconds
+    uint256 public minStakeAmount = 1 ether;
+    uint256 public totalStaked;
+    uint256 public totalCooling;
+    uint256 public totalWithdrawable;
+    
+    // Constants
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    uint256 public constant MAX_REWARD_RATE = 3171e9; // ~100% APY
+    uint256 public constant REWARD_PRECISION = 1e18;
+    uint256 public constant BASE = 1e18;
+    address public constant PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    
+    // Track unstake calls for testing
+    mapping(uint16 => uint256) public unstakeCalls;
+    mapping(uint16 => uint256) public unstakeTimestamps;
+    
+    constructor() {
+        // Initialize with some default validators with very large capacities
+        _addValidator(1, 1000000 ether, true, 1000); // 10% commission
+        _addValidator(2, 1000000 ether, true, 500);  // 5% commission
+        _addValidator(3, 1000000 ether, false, 2000); // 20% commission, inactive
+        _addValidator(4, 1000000 ether, true, 0);    // 0% commission
+        _addValidator(5, 1000000 ether, true, 1500); // 15% commission
+        
+        // Add ETH as reward token
+        rewardTokens.push(PLUME);
+        isRewardTokenMap[PLUME] = true;
+        rewardRates[PLUME] = 1e15; // 0.1% per second
+    }
+    
+    function _addValidator(uint16 validatorId, uint256 maxCapacity, bool active, uint256 commission) internal {
+        validators[validatorId] = PlumeStakingStorage.ValidatorInfo({
+            validatorId: validatorId,
+            active: active,
+            slashed: false,
+            slashedAtTimestamp: 0,
+            maxCapacity: maxCapacity,
+            delegatedAmount: 0,
+            commission: commission,
+            l2AdminAddress: address(0),
+            l2WithdrawAddress: address(0),
+            l1ValidatorAddress: "",
+            l1AccountAddress: "",
+            l1AccountEvmAddress: address(0)
+        });
+        validatorActive[validatorId] = active;
+        validatorCommission[validatorId] = commission;
+        validatorStakersCount[validatorId] = 0;
+    }
+    
+    // Core staking functions
+    function stake(uint16 validatorId) external payable returns (uint256) {
+        require(validatorActive[validatorId], "Validator not active");
+        require(msg.value >= minStakeAmount, "Amount below minimum stake");
+        
+        // Update user stake info
+        userStakeInfo[msg.sender].staked += msg.value;
+        userStaked[msg.sender] += msg.value;
+        userValidatorStakes[msg.sender][validatorId] += msg.value;
+        
+        // Update validator info
+        validatorTotalStaked[validatorId] += msg.value;
+        totalStaked += msg.value;
+        
+        // Add to user validators if first time
+        if (userValidatorStakes[msg.sender][validatorId] == msg.value) {
+            userValidators[msg.sender].push(validatorId);
+            validatorStakersCount[validatorId]++;
+        }
+        
+        return msg.value;
+    }
+    
+    function stakeOnBehalf(uint16 validatorId, address staker) external payable returns (uint256) {
+        require(validatorActive[validatorId], "Validator not active");
+        require(msg.value >= minStakeAmount, "Amount below minimum stake");
+        
+        // Update staker's stake info
+        userStakeInfo[staker].staked += msg.value;
+        userStaked[staker] += msg.value;
+        userValidatorStakes[staker][validatorId] += msg.value;
+        
+        // Update validator info
+        validatorTotalStaked[validatorId] += msg.value;
+        totalStaked += msg.value;
+        
+        // Add to staker's validators if first time
+        if (userValidatorStakes[staker][validatorId] == msg.value) {
+            userValidators[staker].push(validatorId);
+            validatorStakersCount[validatorId]++;
+        }
+        
+        return msg.value;
+    }
+    
+    function restake(uint16 validatorId, uint256 amount) external {
+        require(validatorActive[validatorId], "Validator not active");
+        
+        uint256 availableAmount = userStakeInfo[msg.sender].cooled;
+        if (amount == 0) {
+            amount = availableAmount;
+        }
+        require(amount <= availableAmount, "Insufficient cooled amount");
+        
+        // Move from cooled to staked
+        userStakeInfo[msg.sender].cooled -= amount;
+        userStakeInfo[msg.sender].staked += amount;
+        userCooled[msg.sender] -= amount;
+        userStaked[msg.sender] += amount;
+        userValidatorStakes[msg.sender][validatorId] += amount;
+        
+        // Update validator and total amounts
+        validatorTotalStaked[validatorId] += amount;
+        totalCooling -= amount;
+        totalStaked += amount;
+    }
+    
+    function unstake(uint16 validatorId) external returns (uint256 amount) {
+        return this.unstake(validatorId, userValidatorStakes[msg.sender][validatorId]);
+    }
+    
+    function unstake(uint16 validatorId, uint256 amount) external returns (uint256 amountUnstaked) {
+        require(amount <= userValidatorStakes[msg.sender][validatorId], "Insufficient stake");
+        
+        // Track unstake calls for testing
+        unstakeCalls[validatorId] += amount;
+        unstakeTimestamps[validatorId] = block.timestamp;
+        
+        // Move to cooling
+        userStakeInfo[msg.sender].staked -= amount;
+        userStakeInfo[msg.sender].cooled += amount;
+        userStaked[msg.sender] -= amount;
+        userCooled[msg.sender] += amount;
+        userValidatorStakes[msg.sender][validatorId] -= amount;
+        
+        // Set cooldown
+        userCooldowns[msg.sender][validatorId] = PlumeStakingStorage.CooldownEntry({
+            amount: amount,
+            cooldownEndTime: block.timestamp + cooldownInterval
+        });
+        
+        // Update validator and total amounts
+        validatorTotalStaked[validatorId] -= amount;
+        totalStaked -= amount;
+        totalCooling += amount;
+        
+        return amount;
+    }
+    
+    // Mock function to simulate validator providing less than expected
+    uint256 public mockWithdrawAmount;
+    bool public useMockWithdraw;
+    
+    function setMockWithdraw(uint256 amount) external {
+        mockWithdrawAmount = amount;
+        useMockWithdraw = true;
+    }
+    
+    function setTotalWithdrawable(uint256 amount) external {
+        totalWithdrawable = amount;
+    }
+    
+    function withdraw() external {
+        if (useMockWithdraw) {
+            uint256 amountToSend = mockWithdrawAmount;
+            useMockWithdraw = false; // Reset after use
+            payable(msg.sender).transfer(amountToSend);
+            return;
+        }
+        
+        // For testing purposes, allow withdrawal if totalWithdrawable > 0
+        if (totalWithdrawable > 0) {
+            uint256 amountToSend = totalWithdrawable;
+            totalWithdrawable = 0;
+            payable(msg.sender).transfer(amountToSend);
+            return;
+        }
+        
+        uint256 withdrawableAmount = userStakeInfo[msg.sender].parked;
+        require(withdrawableAmount > 0, "No amount to withdraw");
+        
+        userStakeInfo[msg.sender].parked = 0;
+        userWithdrawable[msg.sender] = 0;
+        totalWithdrawable -= withdrawableAmount;
+        
+        payable(msg.sender).transfer(withdrawableAmount);
+    }
+    
+    // Reward functions
+    function claim(address token) external returns (uint256 amount) {
+        amount = userClaimableRewards[msg.sender][token];
+        if (amount > 0) {
+            userClaimableRewards[msg.sender][token] = 0;
+            totalClaimableByToken[token] -= amount;
+            
+            if (token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
+                // Transfer ETH to the caller (minter contract)
+                (bool success,) = payable(msg.sender).call{value: amount}("");
+                require(success, "ETH transfer failed");
+            } else {
+                // For other tokens, would need IERC20 transfer
+            }
+        }
+        return amount;
+    }
+    
+    function claim(address token, uint16 validatorId) external returns (uint256 amount) {
+        // Simplified - just call the general claim function
+        return this.claim(token);
+    }
+    
+    function claimAll() external returns (uint256[] memory) {
+        uint256[] memory amounts = new uint256[](rewardTokens.length);
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            amounts[i] = this.claim(rewardTokens[i]);
+        }
+        return amounts;
+    }
+    
+    function addReward(address user, address token, uint256 amount) external {
+        userClaimableRewards[user][token] += amount;
+        totalClaimableByToken[token] += amount;
+    }
+    
+    // View functions
+    function stakingInfo() external view returns (
+        uint256 totalStakedAmount,
+        uint256 totalCoolingAmount,
+        uint256 totalWithdrawableAmount,
+        uint256 minStake,
+        address[] memory tokens
+    ) {
+        return (totalStaked, totalCooling, totalWithdrawable, minStakeAmount, rewardTokens);
+    }
+    
+    function stakeInfo(address user) external view returns (PlumeStakingStorage.StakeInfo memory) {
+        return userStakeInfo[user];
+    }
+    
+    function amountStaked() external view returns (uint256) {
+        return totalStaked;
+    }
+    
+    function amountCooling() external view returns (uint256) {
+        return totalCooling;
+    }
+    
+    function amountWithdrawable() external view returns (uint256) {
+        return totalWithdrawable;
+    }
+    
+    function totalAmountStaked() external view returns (uint256) {
+        return totalStaked;
+    }
+    
+    function totalAmountCooling() external view returns (uint256) {
+        return totalCooling;
+    }
+    
+    function totalAmountWithdrawable() external view returns (uint256) {
+        return totalWithdrawable;
+    }
+    
+    function totalAmountClaimable(address token) external view returns (uint256) {
+        return totalClaimableByToken[token];
+    }
+    
+    function cooldownEndDate() external view returns (uint256) {
+        return block.timestamp + cooldownInterval;
+    }
+    
+    function getCooldownInterval() external view returns (uint256) {
+        return cooldownInterval;
+    }
+    
+    function getRewardRate(address token) external view returns (uint256) {
+        return rewardRates[token];
+    }
+    
+    function getClaimableReward(address user, address token) external view returns (uint256) {
+        return userClaimableRewards[user][token];
+    }
+    
+    function getUserValidators(address user) external view returns (uint16[] memory) {
+        return userValidators[user];
+    }
+    
+    function getValidatorInfo(uint16 validatorId) external view returns (
+        PlumeStakingStorage.ValidatorInfo memory info,
+        uint256 totalStakedAmount,
+        uint256 stakersCount
+    ) {
+        return (
+            validators[validatorId],
+            validatorTotalStaked[validatorId],
+            validatorStakersCount[validatorId]
+        );
+    }
+    
+    function getValidatorStats(uint16 validatorId) external view returns (
+        bool active,
+        uint256 commission,
+        uint256 totalStakedAmount,
+        uint256 stakersCount
+    ) {
+        return (
+            validatorActive[validatorId],
+            validatorCommission[validatorId],
+            validatorTotalStaked[validatorId],
+            validatorStakersCount[validatorId]
+        );
+    }
+    
+    function getMinStakeAmount() external view returns (uint256) {
+        return minStakeAmount;
+    }
+    
+    function getTreasury() external view returns (address) {
+        return address(this);
+    }
+    
+    function getRewardTokens() external view returns (address[] memory) {
+        return rewardTokens;
+    }
+    
+    function isRewardToken(address token) external view returns (bool) {
+        return isRewardTokenMap[token];
+    }
+    
+    function getUserCooldowns(address user) external view returns (IPlumeStaking.CooldownView[] memory) {
+        uint16[] memory userValidatorList = userValidators[user];
+        IPlumeStaking.CooldownView[] memory cooldowns = new IPlumeStaking.CooldownView[](userValidatorList.length);
+        
+        for (uint256 i = 0; i < userValidatorList.length; i++) {
+            uint16 validatorId = userValidatorList[i];
+            PlumeStakingStorage.CooldownEntry memory cooldown = userCooldowns[user][validatorId];
+            cooldowns[i] = IPlumeStaking.CooldownView({
+                validatorId: validatorId,
+                amount: cooldown.amount,
+                cooldownEndTime: cooldown.cooldownEndTime
+            });
+        }
+        
+        return cooldowns;
+    }
+    
+    function getUserValidatorStake(address user, uint16 validatorId) external view returns (uint256) {
+        return userValidatorStakes[user][validatorId];
+    }
+    
+    function updateValidator(uint16 validatorId, uint8 updateType, bytes calldata data) external {
+        // Mock implementation - just update the validator info
+        if (updateType == 0) { // commission
+            uint256 commission = abi.decode(data, (uint256));
+            validatorCommission[validatorId] = commission;
+            validators[validatorId].commission = commission;
+        }
+    }
+    
+    function setValidatorActive(uint16 validatorId, bool active) external {
+        validatorActive[validatorId] = active;
+        validators[validatorId].active = active;
+    }
+    
+    function setValidatorCapacity(uint16 validatorId, uint256 capacity) external {
+        validators[validatorId].maxCapacity = capacity;
+    }
+    
+    function setCooldownInterval(uint256 interval) external {
+        cooldownInterval = interval;
+    }
+    
+    function setMinStakeAmount(uint256 amount) external {
+        minStakeAmount = amount;
+    }
+    
+    // Allow contract to receive ETH
+    receive() external payable {}
+}
+
+contract StPlumeMinterForkTestMain is Test {
+    stPlumeMinter minter;
+    stPlumeRewards minterRewards;
+    frxETH frxETHToken;
+    sfrxETH sfrxETHToken;
+    OperatorRegistry registry;
+    MockPlumeStaking mockPlumeStaking;
+    
+    address owner = address(0x1234);
+    address timelock = address(0x5678);
+    address user1 = address(0x9ABC);
+    address user2 = address(0xDEF0);
+    address user3 = address(0x98f4);
+    uint256 YIELD_FEE_DEFAULT = 100000; // 10%
+    uint256 REDEMPTION_FEE_DEFAULT = 150; // 0.02%
+    uint256 INSTANT_REDEMPTION_FEE_DEFAULT = 5000; // 0.5%
+    uint256 RATIO_PRECISION = 1e6;
+    
+    event Unstaked(address indexed user, uint16 indexed validatorId, uint256 amount);
+    event Restaked(address indexed user, uint16 indexed validatorId, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+    event RewardClaimed(address indexed user, address indexed token, uint256 amount);
+    event EmergencyEtherRecovered(uint256 amount);
+    event EmergencyERC20Recovered(address tokenAddress, uint256 tokenAmount);
+    event ETHSubmitted(address indexed sender, address indexed recipient, uint256 sent_amount, uint256 withheld_amt);
+    event TokenMinterMinted(address indexed sender, address indexed to, uint256 amount);
+    event DepositSent(uint16 validatorId);
+    
+    function setUp() public {        
+        // Deploy mock PlumeStaking
+        mockPlumeStaking = new MockPlumeStaking();
+        
+        // Fund the mock with ETH for withdrawals
+        vm.deal(address(mockPlumeStaking), 100 ether);
+        vm.deal(address(user1), 10000 ether);
+        vm.deal(address(user2), 100000 ether); // Increased for 95k stake
+        vm.deal(address(user3), 10000 ether);
+        vm.deal(address(owner), 1000 ether);
+        
+        // Deploy contracts
+        frxETHToken = new frxETH(owner, timelock);
+        
+        // Deploy minter
+        vm.startPrank(owner);
+
+        ProxyAdmin admin = new ProxyAdmin();
+        // Encode initializer
+        stPlumeMinter impl = new stPlumeMinter();
+        bytes memory initData = abi.encodeWithSignature("initialize(address,address, address, address)", address(frxETHToken), owner, timelock, address(mockPlumeStaking));
+        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(address(impl), address(admin), bytes(""));
+        minter = stPlumeMinter(payable(address(proxy)));
+        minter.initialize( address(frxETHToken), owner, timelock, address(mockPlumeStaking));
+
+        stPlumeRewards implRewards = new stPlumeRewards();
+        bytes memory initData2 = abi.encodeWithSignature("initialize(address,address, address)", address(frxETHToken), address(minter), owner);
+        TransparentUpgradeableProxy proxyRewards = new TransparentUpgradeableProxy(address(implRewards), address(admin), bytes(""));
+        minterRewards = stPlumeRewards(payable(address(proxyRewards)));
+        minterRewards.initialize(address(frxETHToken), address(minter), owner);
+        
+
+        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](5);
+        validators[0] = OperatorRegistry.Validator(1);
+        validators[1] = OperatorRegistry.Validator(2);
+        validators[2] = OperatorRegistry.Validator(3);
+        validators[3] = OperatorRegistry.Validator(4);
+        validators[4] = OperatorRegistry.Validator(5);
+        
+        // minter.addValidators(validators);
+        frxETHToken.addMinter(address(minter));
+        frxETHToken.addMinter(address(owner));
+        minter.setStPlumeRewards(address(minterRewards));
+        minter.addValidators(validators);
+
+        vm.stopPrank();
+    }
+        /**
+     * @notice Proof-of-Concept test demonstrating the fundamental reward distribution bug
+     * 
+     * This test demonstrates the core issues with the reward distribution mechanism:
+     * 1. Users receive significantly less immediate claimable rewards than earned
+     * 2. Reward dilution for existing holders due to new deposits during deferred periods
+     * 3. Forfeiture of rewards for unstaking users before deferred rewards are claimable
+     * 4. Delayed compounding and opportunity cost impacts
+     * 
+     * The bug stems from using Synthetix-style prospective reward distribution
+     * for a continuous accrual model, causing rewards to be spread forward
+     * instead of attributed retroactively to the periods they were earned.
+     */
+    function test_reward_distribution_bug_poc() public {
+        // ========== DAY 1 (t=0): Initial Setup ==========
+        uint256 initialStake = 100 ether;
+        
+        // User A stakes 100 PLUME
+        vm.prank(user1);
+        minter.submit{value: initialStake}();
+        
+        uint256 frxETHMinted = frxETHToken.balanceOf(user1);
+        assertEq(frxETHMinted, initialStake, "User A should receive 100 frxETH");
+        assertEq(frxETHToken.totalSupply(), initialStake, "Total supply should be 100 frxETH");
+        
+        // ========== DAY 2 (t=86400): First Reward Load ==========
+        vm.warp(block.timestamp + 86400); // 24 hours later
+        
+        // Simulate 10 PLUME rewards accrued (10% APY approximation)
+        uint256 firstRewardAmount = 10 ether;
+        vm.deal(address(minter), firstRewardAmount);
+        
+        // CLAIMER_ROLE calls claim() to load rewards
+        vm.prank(owner);
+        minter.loadRewards{value: firstRewardAmount}();
+        
+        // Verify rewards are loaded and spread prospectively over 7 days
+        uint256 rewardRate = minterRewards.rewardRate();
+        uint256 rewardsCycleLength = minterRewards.rewardsCycleLength();
+        uint256 expectedRate = firstRewardAmount / rewardsCycleLength; // Rate per second
+        assertApproxEqRel(rewardRate, expectedRate, 0.1e18, "Reward rate should match expected rate per second");
+        
+        // ========== DAY 4 (t=259200): User B Joins (Dilution Test) ==========
+        vm.warp(block.timestamp + 172800); // 2 more days (Day 4)
+        
+        uint256 userBStake = 50 ether;
+        
+        // User B stakes 50 PLUME
+        vm.prank(user2);
+        minter.submit{value: userBStake}();
+        
+        uint256 frxETHMintedB = frxETHToken.balanceOf(user2);
+        assertEq(frxETHMintedB, userBStake, "User B should receive 50 frxETH");
+        assertEq(frxETHToken.totalSupply(), initialStake + userBStake, "Total supply should be 150 frxETH");
+        
+        // ========== DAY 7 (t=518400): User A Attempts to Claim ==========
+        vm.warp(block.timestamp + 259200); // 3 more days (Day 7)
+        
+        // Simulate additional rewards accrued (55 PLUME total since last load)
+        uint256 additionalRewards = 55 ether;
+        vm.deal(address(minter), additionalRewards);
+        
+        // User A calls unstakeRewards() - triggers _rebalance()
+        vm.prank(user1);
+        uint256 claimedRewards = minter.unstakeRewards();
+        
+        // ========== BUG IMPACT 1: SIGNIFICANTLY LESS IMMEDIATE REWARDS ==========
+        // User A should have earned ~65 PLUME total (10 from first period + 55 from second)
+        // But due to prospective spreading, they only get a fraction of the first 10 PLUME
+        // The exact amount depends on the time elapsed since the first load
+        uint256 timeElapsed = 5 * 86400; // 5 days in seconds
+        uint256 expectedImmediateRewards = (firstRewardAmount * timeElapsed) / rewardsCycleLength;
+        
+        // Verify that User A gets significantly less than the total rewards earned
+        assertTrue(claimedRewards < firstRewardAmount + additionalRewards, 
+            "User A gets less than total rewards earned due to prospective distribution");
+        
+        // Verify that User A gets less than half of total rewards earned
+        assertTrue(claimedRewards < (firstRewardAmount + additionalRewards) / 2, 
+            "User A gets less than half of total rewards earned");
+        
+        // The remaining rewards are deferred and spread over next 7 days
+        uint256 totalEarned = firstRewardAmount + additionalRewards;
+        uint256 deferredAmount = totalEarned - claimedRewards;
+        assertTrue(deferredAmount > claimedRewards, 
+            "More rewards are deferred than immediately claimable");
+        
+        // ========== BUG IMPACT 2: REWARD DILUTION FOR EXISTING HOLDERS ==========
+        // User B now shares in the deferred rewards despite not contributing to early periods
+        uint256 userBRewards = minterRewards.getUserRewards(user2);
+        assertTrue(userBRewards > 0, "User B gets rewards despite not contributing to early periods");
+        
+        // User A's effective share dropped from 100% to ~66.7% due to dilution
+        uint256 userAShare = (frxETHMinted * 1e18) / frxETHToken.totalSupply();
+        assertTrue(userAShare < 1e18, "User A's share diluted from 100% due to new deposits");
+        assertTrue(userAShare > 0.5e18, "User A still has majority share");
+        
+        // ========== BUG IMPACT 3: FORFEITURE OF REWARDS ==========
+        // User A approves the minter to spend their frxETH
+        vm.prank(user1);
+        frxETHToken.approve(address(minter), frxETHMinted);
+        
+        // User A calls unstake() to exit completely
+        vm.prank(user1);
+        minter.unstake(frxETHMinted);
+        
+        // User A forfeits all deferred rewards by burning their frxETH
+        uint256 userARewardsAfterUnstake = minterRewards.getUserRewards(user1);
+        assertEq(userARewardsAfterUnstake, 0, "User A forfeits all deferred rewards");
+        
+        // The deferred rewards now go to remaining holders (User B)
+        uint256 userBRewardsAfterAUnstake = minterRewards.getUserRewards(user2);
+        // User B should get more rewards after User A exits due to forfeited rewards
+        // This demonstrates the forfeiture bug - User A loses rewards they earned
+        assertTrue(userBRewardsAfterAUnstake >= userBRewards, 
+            "User B benefits from User A's forfeited rewards");
+        
+        // ========== VERIFY PROTOCOL STATE ==========
+        // Check that the protocol still holds the deferred rewards
+        uint256 protocolBalance = address(minter).balance;
+        assertTrue(protocolBalance > 0, "Protocol retains deferred rewards");
+        
+        // User B can now claim the windfall
+        vm.prank(user2);
+        uint256 userBClaimed = minter.unstakeRewards();
+        assertTrue(userBClaimed > 0, "User B claims windfall from User A's forfeited rewards");
+        
+        // ========== SUMMARY OF BUG IMPACTS ==========
+        // 1. User A received only prorated rewards instead of full earned amount (significant underpayment)
+        // 2. User B unfairly benefited from User A's early contributions (dilution)
+        // 3. User A forfeited deferred rewards by unstaking before they were claimable
+        // 4. Delayed compounding reduces effective APY for short-term claims
+        // 5. The system violates the "appreciation" model where restaked rewards should benefit existing holders exclusively
+    }
+}
+```
+
+The above poc when logged totally and specifcally demonstrated each impacts i showed. 
+
 ---
 ---
 ---
@@ -2672,10 +3508,648 @@ The root cause is unbounded iteration over an unbounded list of validators in th
 The issue is not always exploitable but becomes severe in mature systems with many validators. 
 
 
+## [M-07] Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required.
+
+## Description
+
+In the `stPlumeMinter.sol` contract, a logic flaw causes withdrawal requests' `cooldownTimestamp` to be incorrectly calculated in `batched unstake` scenarios, resulting in users waiting up to `42 days (double the intended 21-day cooldown)` before they can finalize withdrawals via the `withdraw() function`. This occurs when multiple users unstake amounts that accumulate to meet or exceed the `withdrawalQueueThreshold (default: 100,000 ether)` across a shared validator, triggering an immediate batch `unstake` via `_processBatchUnstake()`. However, the cooldownTimestamp for each request is derived from `nextBatchUnstakeTimePerValidator`, which gets updated post-batch to a future value `(block.timestamp + batchUnstakeInterval)`, inflating the timestamp for subsequent calculations within the same unstake batch or loop.
+
+This issue is reproducible in scenarios involving queued unstakes across multiple users on the same validator(s) when no `currentWithheldETH` is available for instant redemption, and the `validator ID is 0 (default, triggering the validator loop)`. For example:
+
+- A validator is added at timestamp `T=1,576,800,000`, setting `nextBatchUnstakeTimePerValidator to T + 21 days`.
+- User A `unstakes` 5k PLUME at `T+24h`, queuing `5k (below threshold)`, setting their `cooldown to ~41-42` days based on the initial nextBatch.
+- User B unstakes 95k PLUME immediately after, pushing the queue to 100k, triggering immediate unstake and updating `nextBatchUnstakeTimePerValidator` to current `T + 21 days + 1h`.
+- User B's cooldown is set using the updated value, resulting in ~42 days.
+- Funds are actually available after 21 days from the trigger, but `withdraw()` enforces the inflated timestamp via `require(block.timestamp >= request.timestamp)`.
+
+The bug does not affect single-user unstakes that instantly hit the threshold or cases with sufficient `currentWithheldETH`. It persists across rebalances and other operations, as no mechanism retroactively corrects pending requests.
+
+## Impact
+
+- User-Facing Delays: Affected users must wait an additional 21 days (or more, depending on batch timing) beyond the actual 21-day cooldown before calling withdraw() to claim their funds. In the example, User A waits ~41 days and User B ~42 days from the unstake trigger, leading to unnecessary fund lockups.
 
 
+## Root cause 
+
+The core flaw lies in the calculation of `cooldownTimestamp` in the `_unstake` function:
+
+- It is set to `plumeStaking.getCooldownInterval() + nextBatchUnstakeTimePerValidator[validatorId]`, assuming `nextBatchUnstakeTimePerValidator` represents the future unstake trigger time.
+- However, when the queue hits the `withdrawalQueueThreshold or time threshold`, `_processBatchUnstake` triggers `plumeStaking.unstake` immediately `(starting the real cooldown at block.timestamp)`, then updates `nextBatchUnstakeTimePerValidator` to `block.timestamp + batchUnstakeInterval`.
+
+- This updated value is used for the current user's cooldown calculation, effectively adding an extra `batchUnstakeInterval (~21 days + 1h)` to the cooldown.
+Prior users in the same batch (e.g., User A) have their timestamps set based on the pre-update value, but since the batch includes their amount, their effective availability is mismatched without retroactive adjustment.
+
+## Fix
+- To resolve this, decouple the cooldown calculation from `nextBatchUnstakeTimePerValidator` and align it with the actual unstake trigger time.
 
 
+## Proofof code
+Add the code to a test file and run with this command: `via--ir`
+
+```solidity
+
+// stPlume/test-new/stPlumeMinter.fork.t.sol
+// SPDX-License-Identifier: AGPL-3.0-only
+pragma solidity ^0.8.0;
+
+import "forge-std/Test.sol";
+import "../../src/stPlumeMinter.sol";
+import "../../src/frxETH.sol";
+import "../../src/sfrxETH.sol";
+import "../../src/OperatorRegistry.sol";
+// import "../../src/DepositContract.sol";
+import { IPlumeStaking } from "../../src/interfaces/IPlumeStaking.sol";
+import { stPlumeRewards } from "../../src/stPlumeRewards.sol";
+import { PlumeStakingStorage } from "../../src/interfaces/PlumeStakingStorage.sol";
+import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+
+// Mock PlumeStaking contract for testing
+contract MockPlumeStaking is IPlumeStaking {
+    using PlumeStakingStorage for PlumeStakingStorage.Layout;
+    
+    PlumeStakingStorage.Layout private _layout;
+    
+    // Mock data storage
+    mapping(address => PlumeStakingStorage.StakeInfo) public userStakeInfo;
+    mapping(uint16 => PlumeStakingStorage.ValidatorInfo) public validators;
+    mapping(uint16 => uint256) public validatorTotalStaked;
+    mapping(uint16 => bool) public validatorActive;
+    mapping(uint16 => uint256) public validatorCommission;
+    mapping(uint16 => uint256) public validatorStakersCount;
+    mapping(address => uint256) public userStaked;
+    mapping(address => uint256) public userCooled;
+    mapping(address => uint256) public userWithdrawable;
+    mapping(address => uint16[]) public userValidators;
+    mapping(address => mapping(uint16 => uint256)) public userValidatorStakes;
+    mapping(address => mapping(uint16 => PlumeStakingStorage.CooldownEntry)) public userCooldowns;
+    
+    address[] public rewardTokens;
+    mapping(address => bool) public isRewardTokenMap;
+    mapping(address => uint256) public rewardRates;
+    mapping(address => uint256) public totalClaimableByToken;
+    mapping(address => mapping(address => uint256)) public userClaimableRewards;
+    
+    uint256 public cooldownInterval = 1814400; // 21 days in seconds
+    uint256 public minStakeAmount = 1 ether;
+    uint256 public totalStaked;
+    uint256 public totalCooling;
+    uint256 public totalWithdrawable;
+    
+    // Constants
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    uint256 public constant MAX_REWARD_RATE = 3171e9; // ~100% APY
+    uint256 public constant REWARD_PRECISION = 1e18;
+    uint256 public constant BASE = 1e18;
+    address public constant PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    
+    // Track unstake calls for testing
+    mapping(uint16 => uint256) public unstakeCalls;
+    mapping(uint16 => uint256) public unstakeTimestamps;
+    
+    constructor() {
+        // Initialize with some default validators with very large capacities
+        _addValidator(1, 1000000 ether, true, 1000); // 10% commission
+        _addValidator(2, 1000000 ether, true, 500);  // 5% commission
+        _addValidator(3, 1000000 ether, false, 2000); // 20% commission, inactive
+        _addValidator(4, 1000000 ether, true, 0);    // 0% commission
+        _addValidator(5, 1000000 ether, true, 1500); // 15% commission
+        
+        // Add ETH as reward token
+        rewardTokens.push(PLUME);
+        isRewardTokenMap[PLUME] = true;
+        rewardRates[PLUME] = 1e15; // 0.1% per second
+    }
+    
+    function _addValidator(uint16 validatorId, uint256 maxCapacity, bool active, uint256 commission) internal {
+        validators[validatorId] = PlumeStakingStorage.ValidatorInfo({
+            validatorId: validatorId,
+            active: active,
+            slashed: false,
+            slashedAtTimestamp: 0,
+            maxCapacity: maxCapacity,
+            delegatedAmount: 0,
+            commission: commission,
+            l2AdminAddress: address(0),
+            l2WithdrawAddress: address(0),
+            l1ValidatorAddress: "",
+            l1AccountAddress: "",
+            l1AccountEvmAddress: address(0)
+        });
+        validatorActive[validatorId] = active;
+        validatorCommission[validatorId] = commission;
+        validatorStakersCount[validatorId] = 0;
+    }
+    
+    // Core staking functions
+    function stake(uint16 validatorId) external payable returns (uint256) {
+        require(validatorActive[validatorId], "Validator not active");
+        require(msg.value >= minStakeAmount, "Amount below minimum stake");
+        
+        // Update user stake info
+        userStakeInfo[msg.sender].staked += msg.value;
+        userStaked[msg.sender] += msg.value;
+        userValidatorStakes[msg.sender][validatorId] += msg.value;
+        
+        // Update validator info
+        validatorTotalStaked[validatorId] += msg.value;
+        totalStaked += msg.value;
+        
+        // Add to user validators if first time
+        if (userValidatorStakes[msg.sender][validatorId] == msg.value) {
+            userValidators[msg.sender].push(validatorId);
+            validatorStakersCount[validatorId]++;
+        }
+        
+        return msg.value;
+    }
+    
+    function stakeOnBehalf(uint16 validatorId, address staker) external payable returns (uint256) {
+        require(validatorActive[validatorId], "Validator not active");
+        require(msg.value >= minStakeAmount, "Amount below minimum stake");
+        
+        // Update staker's stake info
+        userStakeInfo[staker].staked += msg.value;
+        userStaked[staker] += msg.value;
+        userValidatorStakes[staker][validatorId] += msg.value;
+        
+        // Update validator info
+        validatorTotalStaked[validatorId] += msg.value;
+        totalStaked += msg.value;
+        
+        // Add to staker's validators if first time
+        if (userValidatorStakes[staker][validatorId] == msg.value) {
+            userValidators[staker].push(validatorId);
+            validatorStakersCount[validatorId]++;
+        }
+        
+        return msg.value;
+    }
+    
+    function restake(uint16 validatorId, uint256 amount) external {
+        require(validatorActive[validatorId], "Validator not active");
+        
+        uint256 availableAmount = userStakeInfo[msg.sender].cooled;
+        if (amount == 0) {
+            amount = availableAmount;
+        }
+        require(amount <= availableAmount, "Insufficient cooled amount");
+        
+        // Move from cooled to staked
+        userStakeInfo[msg.sender].cooled -= amount;
+        userStakeInfo[msg.sender].staked += amount;
+        userCooled[msg.sender] -= amount;
+        userStaked[msg.sender] += amount;
+        userValidatorStakes[msg.sender][validatorId] += amount;
+        
+        // Update validator and total amounts
+        validatorTotalStaked[validatorId] += amount;
+        totalCooling -= amount;
+        totalStaked += amount;
+    }
+    
+    function unstake(uint16 validatorId) external returns (uint256 amount) {
+        return this.unstake(validatorId, userValidatorStakes[msg.sender][validatorId]);
+    }
+    
+    function unstake(uint16 validatorId, uint256 amount) external returns (uint256 amountUnstaked) {
+        require(amount <= userValidatorStakes[msg.sender][validatorId], "Insufficient stake");
+        
+        // Track unstake calls for testing
+        unstakeCalls[validatorId] += amount;
+        unstakeTimestamps[validatorId] = block.timestamp;
+        
+        // Move to cooling
+        userStakeInfo[msg.sender].staked -= amount;
+        userStakeInfo[msg.sender].cooled += amount;
+        userStaked[msg.sender] -= amount;
+        userCooled[msg.sender] += amount;
+        userValidatorStakes[msg.sender][validatorId] -= amount;
+        
+        // Set cooldown
+        userCooldowns[msg.sender][validatorId] = PlumeStakingStorage.CooldownEntry({
+            amount: amount,
+            cooldownEndTime: block.timestamp + cooldownInterval
+        });
+        
+        // Update validator and total amounts
+        validatorTotalStaked[validatorId] -= amount;
+        totalStaked -= amount;
+        totalCooling += amount;
+        
+        return amount;
+    }
+    
+    // Mock function to simulate validator providing less than expected
+    uint256 public mockWithdrawAmount;
+    bool public useMockWithdraw;
+    
+    function setMockWithdraw(uint256 amount) external {
+        mockWithdrawAmount = amount;
+        useMockWithdraw = true;
+    }
+    
+    function setTotalWithdrawable(uint256 amount) external {
+        totalWithdrawable = amount;
+    }
+    
+    function withdraw() external {
+        if (useMockWithdraw) {
+            uint256 amountToSend = mockWithdrawAmount;
+            useMockWithdraw = false; // Reset after use
+            payable(msg.sender).transfer(amountToSend);
+            return;
+        }
+        
+        // For testing purposes, allow withdrawal if totalWithdrawable > 0
+        if (totalWithdrawable > 0) {
+            uint256 amountToSend = totalWithdrawable;
+            totalWithdrawable = 0;
+            payable(msg.sender).transfer(amountToSend);
+            return;
+        }
+        
+        uint256 withdrawableAmount = userStakeInfo[msg.sender].parked;
+        require(withdrawableAmount > 0, "No amount to withdraw");
+        
+        userStakeInfo[msg.sender].parked = 0;
+        userWithdrawable[msg.sender] = 0;
+        totalWithdrawable -= withdrawableAmount;
+        
+        payable(msg.sender).transfer(withdrawableAmount);
+    }
+    
+    // Reward functions
+    function claim(address token) external returns (uint256 amount) {
+        amount = userClaimableRewards[msg.sender][token];
+        if (amount > 0) {
+            userClaimableRewards[msg.sender][token] = 0;
+            totalClaimableByToken[token] -= amount;
+            
+            if (token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
+                // Transfer ETH to the caller (minter contract)
+                (bool success,) = payable(msg.sender).call{value: amount}("");
+                require(success, "ETH transfer failed");
+            } else {
+                // For other tokens, would need IERC20 transfer
+            }
+        }
+        return amount;
+    }
+    
+    function claim(address token, uint16 validatorId) external returns (uint256 amount) {
+        // Simplified - just call the general claim function
+        return this.claim(token);
+    }
+    
+    function claimAll() external returns (uint256[] memory) {
+        uint256[] memory amounts = new uint256[](rewardTokens.length);
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            amounts[i] = this.claim(rewardTokens[i]);
+        }
+        return amounts;
+    }
+    
+    function addReward(address user, address token, uint256 amount) external {
+        userClaimableRewards[user][token] += amount;
+        totalClaimableByToken[token] += amount;
+    }
+    
+    // View functions
+    function stakingInfo() external view returns (
+        uint256 totalStakedAmount,
+        uint256 totalCoolingAmount,
+        uint256 totalWithdrawableAmount,
+        uint256 minStake,
+        address[] memory tokens
+    ) {
+        return (totalStaked, totalCooling, totalWithdrawable, minStakeAmount, rewardTokens);
+    }
+    
+    function stakeInfo(address user) external view returns (PlumeStakingStorage.StakeInfo memory) {
+        return userStakeInfo[user];
+    }
+    
+    function amountStaked() external view returns (uint256) {
+        return totalStaked;
+    }
+    
+    function amountCooling() external view returns (uint256) {
+        return totalCooling;
+    }
+    
+    function amountWithdrawable() external view returns (uint256) {
+        return totalWithdrawable;
+    }
+    
+    function totalAmountStaked() external view returns (uint256) {
+        return totalStaked;
+    }
+    
+    function totalAmountCooling() external view returns (uint256) {
+        return totalCooling;
+    }
+    
+    function totalAmountWithdrawable() external view returns (uint256) {
+        return totalWithdrawable;
+    }
+    
+    function totalAmountClaimable(address token) external view returns (uint256) {
+        return totalClaimableByToken[token];
+    }
+    
+    function cooldownEndDate() external view returns (uint256) {
+        return block.timestamp + cooldownInterval;
+    }
+    
+    function getCooldownInterval() external view returns (uint256) {
+        return cooldownInterval;
+    }
+    
+    function getRewardRate(address token) external view returns (uint256) {
+        return rewardRates[token];
+    }
+    
+    function getClaimableReward(address user, address token) external view returns (uint256) {
+        return userClaimableRewards[user][token];
+    }
+    
+    function getUserValidators(address user) external view returns (uint16[] memory) {
+        return userValidators[user];
+    }
+    
+    function getValidatorInfo(uint16 validatorId) external view returns (
+        PlumeStakingStorage.ValidatorInfo memory info,
+        uint256 totalStakedAmount,
+        uint256 stakersCount
+    ) {
+        return (
+            validators[validatorId],
+            validatorTotalStaked[validatorId],
+            validatorStakersCount[validatorId]
+        );
+    }
+    
+    function getValidatorStats(uint16 validatorId) external view returns (
+        bool active,
+        uint256 commission,
+        uint256 totalStakedAmount,
+        uint256 stakersCount
+    ) {
+        return (
+            validatorActive[validatorId],
+            validatorCommission[validatorId],
+            validatorTotalStaked[validatorId],
+            validatorStakersCount[validatorId]
+        );
+    }
+    
+    function getMinStakeAmount() external view returns (uint256) {
+        return minStakeAmount;
+    }
+    
+    function getTreasury() external view returns (address) {
+        return address(this);
+    }
+    
+    function getRewardTokens() external view returns (address[] memory) {
+        return rewardTokens;
+    }
+    
+    function isRewardToken(address token) external view returns (bool) {
+        return isRewardTokenMap[token];
+    }
+    
+    function getUserCooldowns(address user) external view returns (IPlumeStaking.CooldownView[] memory) {
+        uint16[] memory userValidatorList = userValidators[user];
+        IPlumeStaking.CooldownView[] memory cooldowns = new IPlumeStaking.CooldownView[](userValidatorList.length);
+        
+        for (uint256 i = 0; i < userValidatorList.length; i++) {
+            uint16 validatorId = userValidatorList[i];
+            PlumeStakingStorage.CooldownEntry memory cooldown = userCooldowns[user][validatorId];
+            cooldowns[i] = IPlumeStaking.CooldownView({
+                validatorId: validatorId,
+                amount: cooldown.amount,
+                cooldownEndTime: cooldown.cooldownEndTime
+            });
+        }
+        
+        return cooldowns;
+    }
+    
+    function getUserValidatorStake(address user, uint16 validatorId) external view returns (uint256) {
+        return userValidatorStakes[user][validatorId];
+    }
+    
+    function updateValidator(uint16 validatorId, uint8 updateType, bytes calldata data) external {
+        // Mock implementation - just update the validator info
+        if (updateType == 0) { // commission
+            uint256 commission = abi.decode(data, (uint256));
+            validatorCommission[validatorId] = commission;
+            validators[validatorId].commission = commission;
+        }
+    }
+    
+    function setValidatorActive(uint16 validatorId, bool active) external {
+        validatorActive[validatorId] = active;
+        validators[validatorId].active = active;
+    }
+    
+    function setValidatorCapacity(uint16 validatorId, uint256 capacity) external {
+        validators[validatorId].maxCapacity = capacity;
+    }
+    
+    function setCooldownInterval(uint256 interval) external {
+        cooldownInterval = interval;
+    }
+    
+    function setMinStakeAmount(uint256 amount) external {
+        minStakeAmount = amount;
+    }
+    
+    // Allow contract to receive ETH
+    receive() external payable {}
+}
+
+contract StPlumeMinterForkTestMain is Test {
+    stPlumeMinter minter;
+    stPlumeRewards minterRewards;
+    frxETH frxETHToken;
+    sfrxETH sfrxETHToken;
+    OperatorRegistry registry;
+    MockPlumeStaking mockPlumeStaking;
+    
+    address owner = address(0x1234);
+    address timelock = address(0x5678);
+    address user1 = address(0x9ABC);
+    address user2 = address(0xDEF0);
+    address user3 = address(0x98f4);
+    uint256 YIELD_FEE_DEFAULT = 100000; // 10%
+    uint256 REDEMPTION_FEE_DEFAULT = 150; // 0.02%
+    uint256 INSTANT_REDEMPTION_FEE_DEFAULT = 5000; // 0.5%
+    uint256 RATIO_PRECISION = 1e6;
+    
+    event Unstaked(address indexed user, uint16 indexed validatorId, uint256 amount);
+    event Restaked(address indexed user, uint16 indexed validatorId, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+    event RewardClaimed(address indexed user, address indexed token, uint256 amount);
+    event EmergencyEtherRecovered(uint256 amount);
+    event EmergencyERC20Recovered(address tokenAddress, uint256 tokenAmount);
+    event ETHSubmitted(address indexed sender, address indexed recipient, uint256 sent_amount, uint256 withheld_amt);
+    event TokenMinterMinted(address indexed sender, address indexed to, uint256 amount);
+    event DepositSent(uint16 validatorId);
+    
+    function setUp() public {        
+        // Deploy mock PlumeStaking
+        mockPlumeStaking = new MockPlumeStaking();
+        
+        // Fund the mock with ETH for withdrawals
+        vm.deal(address(mockPlumeStaking), 100 ether);
+        vm.deal(address(user1), 10000 ether);
+        vm.deal(address(user2), 100000 ether); // Increased for 95k stake
+        vm.deal(address(user3), 10000 ether);
+        vm.deal(address(owner), 1000 ether);
+        
+        // Deploy contracts
+        frxETHToken = new frxETH(owner, timelock);
+        
+        // Deploy minter
+        vm.startPrank(owner);
+
+        ProxyAdmin admin = new ProxyAdmin();
+        // Encode initializer
+        stPlumeMinter impl = new stPlumeMinter();
+        bytes memory initData = abi.encodeWithSignature("initialize(address,address, address, address)", address(frxETHToken), owner, timelock, address(mockPlumeStaking));
+        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(address(impl), address(admin), bytes(""));
+        minter = stPlumeMinter(payable(address(proxy)));
+        minter.initialize( address(frxETHToken), owner, timelock, address(mockPlumeStaking));
+
+        stPlumeRewards implRewards = new stPlumeRewards();
+        bytes memory initData2 = abi.encodeWithSignature("initialize(address,address, address)", address(frxETHToken), address(minter), owner);
+        TransparentUpgradeableProxy proxyRewards = new TransparentUpgradeableProxy(address(implRewards), address(admin), bytes(""));
+        minterRewards = stPlumeRewards(payable(address(proxyRewards)));
+        minterRewards.initialize(address(frxETHToken), address(minter), owner);
+        
+
+        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](5);
+        validators[0] = OperatorRegistry.Validator(1);
+        validators[1] = OperatorRegistry.Validator(2);
+        validators[2] = OperatorRegistry.Validator(3);
+        validators[3] = OperatorRegistry.Validator(4);
+        validators[4] = OperatorRegistry.Validator(5);
+        
+        // minter.addValidators(validators);
+        frxETHToken.addMinter(address(minter));
+        frxETHToken.addMinter(address(owner));
+        minter.setStPlumeRewards(address(minterRewards));
+        minter.addValidators(validators);
+
+        vm.stopPrank();
+    }
+
+    /**
+    * @dev Proof-of-concept test for the cooldown timestamp bug scenario
+    *
+* This test reproduces the exact bug described where users wait ~42 days instead of 21 days
+* for withdrawals due to incorrect cooldown timestamp calculation in batched unstake scenarios.
+*
+* Bug scenario:
+* 1. Validator is added with nextBatchUnstakeTimePerValidator set to timestamp + 21 days
+* 2. Users stake 100k PLUME total (5k + 95k)
+* 3. User A unstakes 5k - no batch processing, cooldown timestamp = nextBatchUnstakeTimePerValidator + 21 days
+* 4. User B unstakes 95k - triggers batch processing, updates nextBatchUnstakeTimePerValidator
+* 5. User B's cooldown timestamp = new nextBatchUnstakeTimePerValidator + 21 days
+* 6. Both users wait ~42 days instead of 21 days for withdrawal
+*/
+function test_cooldownTimestampBugScenario() public {
+// Set up mock with specific cooldown interval (21 days)
+mockPlumeStaking.setCooldownInterval(1814400); // 21 days in seconds
+// Set withdrawal queue threshold to 100k ether to trigger batch processing
+vm.startPrank(owner);
+minter.setBatchUnstakeParams(100000 ether, 21 days + 1 hours);
+vm.stopPrank();
+// Step 1: Users stake ETH (simulating 100k PLUME total)
+vm.startPrank(user1);
+minter.submit{value: 5000 ether}(); // User A stakes 5k
+vm.stopPrank();
+vm.startPrank(user2);
+minter.submit{value: 95000 ether}(); // User B stakes 95k
+vm.stopPrank();
+// Verify initial state (accounting for fees)
+assertEq(frxETHToken.balanceOf(user1), 5000 ether);
+assertEq(frxETHToken.balanceOf(user2), 95000 ether);
+// Note: totalStaked will be less than 100k due to fees
+// Step 2: User A unstakes 5k first
+uint256 initialTimestamp = block.timestamp;
+vm.startPrank(user1);
+frxETHToken.approve(address(minter), 5000 ether);
+minter.unstake(5000 ether);
+vm.stopPrank();
+// Get User A's withdrawal request
+(uint256 userAAmount, uint256 userADeficit, uint256 userATimestamp,) = minter.withdrawalRequests(user1, 0);
+assertEq(userAAmount, 5000 ether);
+assertEq(userADeficit, 0);
+// Step 3: User B unstakes 95k immediately after (triggers batch processing)
+vm.startPrank(user2);
+frxETHToken.approve(address(minter), 95000 ether);
+minter.unstake(95000 ether);
+vm.stopPrank();
+// Get User B's withdrawal request
+(uint256 userBAmount, uint256 userBDeficit, uint256 userBTimestamp,) = minter.withdrawalRequests(user2, 0);
+// Note: userBAmount will be less than 95k due to fees, and deficit will be non-zero
+// Step 4: Verify the bug - both users have inflated cooldown timestamps
+// Expected: Users should be able to withdraw after 21 days (1814400 seconds)
+// Actual: Users wait much longer due to incorrect timestamp calculation
+uint256 expectedCooldownEnd = initialTimestamp + 1814400; // 21 days
+uint256 actualUserACooldown = userATimestamp;
+uint256 actualUserBCooldown = userBTimestamp;
+// The bug manifests as inflated cooldown timestamps
+// User A's timestamp should be around: initialTimestamp + 21 days + 21 days = ~42 days
+// User B's timestamp should be around: initialTimestamp + 21 days + 21 days = ~42 days
+assertGt(actualUserACooldown, expectedCooldownEnd, "User A cooldown timestamp is inflated");
+assertGt(actualUserBCooldown, expectedCooldownEnd, "User B cooldown timestamp is inflated");
+// Verify the timestamps are approximately 42 days from initial timestamp
+uint256 expectedBuggyTimestamp = initialTimestamp + (1814400 * 2); // ~42 days
+uint256 tolerance = 3600; // 1 hour tolerance
+assertApproxEqAbs(actualUserACooldown, expectedBuggyTimestamp, tolerance,
+"User A cooldown timestamp should be ~42 days from initial timestamp");
+assertApproxEqAbs(actualUserBCooldown, expectedBuggyTimestamp, tolerance,
+"User B cooldown timestamp should be ~42 days from initial timestamp");
+// Step 5: Verify that funds are actually available after 21 days but users can't withdraw
+// Fast forward to 21 days after initial timestamp
+vm.warp(initialTimestamp + 1814400);
+// At this point, the actual unstake should have completed on PlumeStaking
+// But users still can't withdraw due to inflated timestamps
+vm.startPrank(user1);
+vm.expectRevert("Cooldown not complete");
+minter.withdraw(user1, 0);
+vm.stopPrank();
+vm.startPrank(user2);
+vm.expectRevert("Cooldown not complete");
+minter.withdraw(user2, 0);
+vm.stopPrank();
+// Step 6: Verify users can withdraw after the inflated timestamp
+vm.warp(actualUserACooldown);
+// Set up mock to have withdrawable funds and ensure it has ETH
+vm.deal(address(mockPlumeStaking), 200000 ether); // Give mock enough ETH
+mockPlumeStaking.setTotalWithdrawable(100000 ether);
+uint256 user1BalanceBefore = user1.balance;
+vm.startPrank(user1);
+uint256 withdrawnAmount = minter.withdraw(user1, 0);
+vm.stopPrank();
+uint256 user1BalanceAfter = user1.balance;
+// Verify withdrawal succeeded
+assertGt(withdrawnAmount, 0, "User A should be able to withdraw after inflated timestamp");
+assertGt(user1BalanceAfter - user1BalanceBefore, 0, "User A should receive ETH");
+// Step 7: Verify the root cause - nextBatchUnstakeTimePerValidator was updated incorrectly
+// This is the core issue: the cooldown timestamp calculation uses nextBatchUnstakeTimePerValidator
+// which gets updated during batch processing, causing inflated timestamps
+// The bug is confirmed: users wait ~42 days instead of 21 days for withdrawal
+// even though the actual unstake on PlumeStaking completes after 21 days
+}
+}
+```
 ---
 ---
 ---
