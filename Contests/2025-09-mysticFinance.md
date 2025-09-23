@@ -6,6 +6,7 @@ My Finding Summay
 |:-:|:---|:------:|
 |[H-01](#h-01-missing-validation-of-`withdrawn-==-totalWithdrawable`-in-`withdraw`-function-can-cause-phantom-eth-and-DOS-on-legitimate-withdrawals)|Missing validation of `withdrawn == totalwithdrawable` in `withdraw` fucntion can cause phantom eth and DOS on legitimate withdrawals.|HIGH|
 |[H-02](#h-02-Non-Native-Historical-Reward-Tokens-Stuck-in-`stPlumeMinter.sol`-Leading-to`Complete-Loss-of-Funds)|Non-Native Historical Reward Tokens Stuck in `stPlumeMinter.sol` Leading to Complete Loss of Funds.|HIGH|
+[H-03](#h-03-when-a-validator-slash-occurs-in-plumeStaking.sol,-the-minted-synthetic-tokens-aka-frxETH-is-still-in-possession-of-the-user-and-can-be-used-to -steal-from-other-users-via-pooled-unstakes-in-`stPlumeMinter.sol`)|When a validator slash occurs in plumeStaking.sol, the minted synthetic tokens aka frxETH is still in possession of the user and can be used to steal from other users via pooled unstakes in `stPlumeMinter.sol`|HIGH|
 ||||
 |[M-01](#m-01-wrong-math-calculation-in-my-plume-feed-token-price)|Wrong math calculation in my MyplumeFeed Token price. |MEDIUM|
 |[M-02](#m-02-a-validator-percentage-limit-can-be-bypassed-in-`stPlumeMinter.sol`-when-`validatorId!=0`)|A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.|MEDIUM|
@@ -1621,6 +1622,112 @@ contract MockERC20 {
         return true;
     }
 }
+```
+
+## [H-03] when a validator slash occurs in `plumeStaking.sol`, the minted synthetic tokens aka `frxETH` is still in possession of the user and can be used to steal from other users via pooled unstakes in `stPlumeMinter.sol`.
+
+## Description
+
+In the `stPlumeMinter.sol` contract, which extends `frxETHMinter.sol` to handle staking into `PlumeStaking.sol`, a vulnerability arises when a validator is slashed in `PlumeStaking.sol`. Slashing causes the forfeiture of all delegated PLUME tokens (staked ETH equivalents) for that validator, reducing the total backing assets in the pool. However, the `synthetic frxETH` tokens minted to users upon staking remain outstanding and unburned, leading to undercollateralization. 
+
+Due to the pooled nature of stakes `(all under the stPlumeMinter address)` and the unstake logic that loops through validators indiscriminately, users can unstake from healthy validators even if their original stake was on a slashed one. This allows "affected" users to drain funds from unaffected parts of the pool, effectively stealing from other users. The system lacks mechanisms to detect slashing, prorate losses, or tie user frxETH to specific validators.
+
+## Root Cause
+The root cause stems from:
+
+- Pooled Staking Design: All stakes are delegated under `address(this) (stPlumeMinter.sol)`, making frxETH fungible and not tied to specific validators per user. Slashing reduces `PlumeStaking's claimable` assets but doesn't trigger frxETH burns.
+
+- Unstake Logic in `stPlumeMinter.sol`: In `_unstake(uint256 amount, bool rewards, uint16 _validatorId)`, when `_validatorId == 0 (default for unstake())`, it loops through all validators and skips slashed ones `(where active = false and stakedAmount = 0)`. It then queues unstakes on healthy validators, allowing withdrawals from the remaining pool regardless of original allocation.
+
+```solidity
+function _unstake(uint256 amount, bool rewards, uint16 _validatorId) internal returns (uint256 amountUnstaked) {
+    // ... (burn frxETH if not rewards)
+    // ... (handle instant if covered by withheld ETH)
+    } else {
+        uint256 remainingToUnstake = amount;
+        amountUnstaked = 0;
+        // ... (specific validator handling if _validatorId != 0)
+        uint16 index = 0;
+        uint numVals = numValidators();
+        while (index < numVals && _validatorId == 0) {
+            uint256 validatorId = validators[index].validatorId;
+            require(validatorId > 0, "Validator does not exist");
+            (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(validatorId));
+            uint256 validatorStakedAmount = plumeStaking.getUserValidatorStake(address(this), uint16(validatorId));
+            uint256 remainingUnstaked = validatorStakedAmount - totalQueuedWithdrawalsPerValidator[uint16(validatorId)];
+            
+            if (active && stakedAmount > 0 && validatorStakedAmount > 0 && validatorStakedAmount <= stakedAmount && remainingUnstaked > 0 ) {
+                uint256 unstakeAmountFromValidator = remainingToUnstake > remainingUnstaked ? remainingUnstaked : remainingToUnstake;
+                totalQueuedWithdrawalsPerValidator[uint16(validatorId)] += unstakeAmountFromValidator;
+                amountUnstaked += unstakeAmountFromValidator;
+                remainingToUnstake -= unstakeAmountFromValidator;
+                if (totalQueuedWithdrawalsPerValidator[uint16(validatorId)] >= withdrawalQueueThreshold || block.timestamp >= nextBatchUnstakeTimePerValidator[uint16(validatorId)]) {
+                    _processBatchUnstake(uint16(validatorId));
+                }
+                // ... (update cooldown)
+                if (remainingToUnstake == 0) break;
+            }
+            index++;
+            require(index <= numVals, "Too many validators checked");
+        }
+        // ... (deficit handling from withheld ETH)
+        require(remainingToUnstake == 0, "Not enough funds unstaked");
+    }
+    // ... (record withdrawal request)
+}
+```
+- Slashed validators fail the if `(active && ...)` check, so the loop continues to healthy ones.
+
+- Slashing in `PlumeStaking.sol`: Slashing zeros out `validatorTotalStaked[validatorId]`, making slashed validators invisible to queries like `getValidatorStats` and `getUserValidatorStake`, but without notifying or adjusting the minter's frxETH supply.
+
+```solidity
+function _performSlash(uint16 validatorId, address slasher) internal {
+    // ... (checks)
+    uint256 stakeLost = $.validatorTotalStaked[validatorId];
+    uint256 cooledLost = $.validatorTotalCooling[validatorId];
+    // ...
+    validatorToSlash.active = false;
+    validatorToSlash.slashed = true;
+    // ...
+    $.totalStaked -= stakeLost;
+    $.totalCooling -= cooledLost;
+    $.validatorTotalStaked[validatorId] = 0;  // Zeros out staked amount
+    $.validatorTotalCooling[validatorId] = 0;
+    validatorToSlash.delegatedAmount = 0;
+    // ... (clear stakers and votes)
+}
+
+_________________________________________________
+
+function getValidatorInfo(uint16 validatorId) external view returns (PlumeStakingStorage.ValidatorInfo memory info, uint256 totalStaked, uint256 stakersCount) {
+    // ...
+    totalStaked = $.validatorTotalStaked[validatorId];  // Returns 0 for slashed
+    // ...
+}
+```
+
+- No Slashing Detection: stPlumeMinter doesn't monitor for slashes (e.g., via events) or reconcile total staked PLUME vs. frxETH supply before unstakes.
+
+## Impacts 
+
+
+
+1. Fund Theft: Users whose stakes were on slashed validators can unstake from healthy ones, draining the pool and leaving other users with underbacked frxETH.
+2. Undercollateralization: Total frxETH supply exceeds claimable PLUME post-slash, making frxETH worthless for late unstakers.
+3. Early unstakers succeed; later ones fail due to insufficient remainingUnstaked, leading to panic and potential secondary market dumps.
+4.  Affected users sell/trade worthless frxETH, causing contagion to protocols using it as collateral.
+5. DoS on Unstakes: If many validators slashed, unstakes could loop indefinitely or fail entirely.
+
+## Fix
+
+This is unique case that needs to be handled. The fix i can think of right now is to have virtual balances instead and perphaps implement a better `_unstake`
+fucntion that takes this edge case into consideration. 
+
+## Poc 
+
+Add the code in a testfile and run with `via--ir`.
+
+```solidity
 
 ```
 ---
