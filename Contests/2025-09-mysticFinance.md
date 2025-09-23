@@ -1734,13 +1734,6 @@ function getValidatorInfo(uint16 validatorId) external view returns (PlumeStakin
 This is unique case that needs to be handled. The fix i can think of right now is to have virtual balances instead and perphaps implement a better `_unstake`
 fucntion that takes this edge case into consideration. 
 
-## Poc 
-
-Add the code in a testfile and run with `via--ir`.
-
-```solidity
-
-```
 ---
 ---
 ---
