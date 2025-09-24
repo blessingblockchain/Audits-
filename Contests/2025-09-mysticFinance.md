@@ -3358,7 +3358,7 @@ This ordering effectively "front-runs" the user sync by resetting `lastSync` aft
 
 ## Fix
 
-The only fix i can think of right now is: Reorder Operations: In ``loadRewards()`, perform `_loadRewards()` before the `updateReward(address(0))` modifier, so the new rate is used in the accrual. However, this might require careful handling of timestamps to avoid double-counting.
+The only fix i can think of right now is: Reorder Operations: In `loadRewards()`, perform `_loadRewards()` before the `updateReward(address(0))` modifier, so the new rate is used in the accrual. However, this might require careful handling of timestamps to avoid double-counting.
 
 ## POC
 
