@@ -2604,7 +2604,8 @@ Evidence of slashing awareness in the codebase:
 - User's withdrawal fails: `require(1000 <= 800)` reverts. 
 
 2. Unfair Slashing Distribution
-2 users stake 2k PLUME into `stPlumeMinter.sol`, and `stPlumeMinter.sol` then stakes 2k plume into `PlumeStaking`. `stPlumeMinter` has 2 validators, so let's assume 1k PLUME is then staked on each of these validators on PlumeStaking side
+
+- 2 users stake 2k PLUME into `stPlumeMinter.sol`, and `stPlumeMinter.sol` then stakes 2k plume into `PlumeStaking`. `stPlumeMinter` has 2 validators, so let's assume 1k PLUME is then staked on each of these validators on PlumeStaking side
 
 - After 15 days, user 1 unstakes his 1k PLUME, this then triggers unstaking 1k PLUME from validator 1 on the PlumeStaking side. the total cooling amount on PlumeStaking side will be 1k PLUME and the total staked will be 1k PLUME (that is staked on validator 2). the 1k PLUME cooling (unstaked from validator1) will be available to be claimed on day 36 (because of 21 day cooldown)
 
