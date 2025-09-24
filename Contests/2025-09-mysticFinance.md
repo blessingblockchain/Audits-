@@ -18,7 +18,7 @@ My Finding Summay
 |[L-02](#l-02-missing-reward-rate-validation-in-`stPlumeRewards.sol`)|Missing reward rate validation in `stPlumeReward.sol`. |LOW|
 |[L-03](#l-03-unused-fucntion-`_getCoolDownPerValidator`-in-`stPlumeMinter.sol`)| Unused Function `_getCoolDownPerValidator` in `stPlumeMinter.sol`. |LOW|
 |[L-04](#l-04-potential-division-by-zero-in-`getMyPlumePrice`-function-in-`MyPLumeFeed.sol`)| Potential division by zero in `getMyPlumePrice` function in `MyPLumeFeed.sol`. |LOW|
-|[L-05](#l-05-Dos-in-`unstakefunction`-when-no-specific-validator-is-provided)|Dos in `unstakefunction` when no specific validator is provided. |MEDIUM|
+|[L-05](#l-05-Dos-in-`unstakefunction`-when-no-specific-validator-is-provided)|Dos in `unstakefunction` when no specific validator is provided. |LOW|
 ||||
 |[I-01](#i-01-Unnecessary-Conditional-Check-in-`resetUserRewardsAfterClaim`)| Unnecessary Conditional Check in`resetUserRewardsAfterClaim` |INFO|
 
