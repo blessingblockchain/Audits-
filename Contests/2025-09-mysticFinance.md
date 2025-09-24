@@ -2510,7 +2510,22 @@ When no new rewards are accrued, `stPlumeRewards.rewardPerToken()` remains stati
 
 1.  when no new rewards are accrued, as the static reward amount is subtracted indefinitely.
 
+## Scenario: 
 
+- Day 1: Two users deposit 1,000 PLUME each → Total staked = 2,000 PLUME, frxETH supply = 2,000e18 (1:1 peg initially).
+
+- Rewards accrue: 100 PLUME over a 7-day cycle `(via _rebalance() and loadRewards())`. After `10% YIELD_FEE (10 PLUME)`, 90 PLUME is restaked. Total staked = 2,090 PLUME.
+
+- In `stPlumeRewards.sol`: `rewardRate = 90e18 / 604,800 ≈ 148,809,523,809,523`, `rewardPerTokenStored` reaches ~6.43e16 (100e18 equivalent after 7 days, scaled by supply). Cycle ends; no new rewards accrue `(e.g., validators paused, no _rebalance())`.
+
+
+No-Reward Period (Day 8+):
+
+- No new `loadRewards()` calls → `rewardRate = 0`, rewardsCycleEnd is past, so `lastTimeRewardApplicable() = rewardsCycleEnd`.
+-`rewardPerToken()` returns `rewardPerTokenStored ≈ 6.43e16 (static, no accrual term)`.
+- `getMyPlumeRewards() = (6.43e16 * 2,000e18) / 1e18 ≈ 128.6e18` (equivalent to 100 PLUME total rewards, pre-fee).
+-`getTotalDeposits()` = 2,090e18 (staked, including restaked 90) + 0 (withheld) - 0 (unstaked) - 128.6e18 (rewards) ≈ 1,961.4e18.
+- `getMyPlumePrice()` = (1,961.4e18 * 1e18) / 2,000e18 ≈ 0.9807e18 (~0.981 PLUME per frxETH).
 
 
 
@@ -2523,6 +2538,10 @@ When no new rewards are accrued, `stPlumeRewards.rewardPerToken()` remains stati
 ## [M-03] Unstaking Calculates User Share at Request Time, Ignoring Slashing Leading to DoS and Unfair Distribution in `stPLumeMinter.sol`
 
 ## Description
+
+
+-NB: After several thoughts, id say this is a business risk bug and users should be notified in the front-end that if a slash occurs on the validators they staked on and they had pending unstake, that the pending unstake cannot be fulfilled since their validator got slashed. 
+
 
 The `stPlumeMinter.sol` suffers from a critical  flaw in its unstaking mechanism where withdrawal amounts are calculated and locked at `unstake request time` rather than at `claim time`. This creates significant issues in a slashing-enabled environment where validator stakes can be reduced between the unstake request and the actual withdrawal.
 
@@ -2581,18 +2600,24 @@ Evidence of slashing awareness in the codebase:
 
 1. Denial of Service (DoS)
 - Large user unstakes 1000 ETH when pool has 2000 ETH
-- Validator gets slashed by 60%, pool reduces to 800 ETH
+- Validator gets slashed by 100%, pool reduces to 800 ETH
 - User's withdrawal fails: `require(1000 <= 800)` reverts. 
 
 2. Unfair Slashing Distribution
-- User A unstakes 500 ETH from 1000 ETH pool → locks 500 ETH claim
-- Validator slashed by 50% → pool becomes 500 ETH
-- User A withdraws full 500 ETH (entire remaining pool)
-- Remaining users absorb 100% of slashing losses despite User A holding 50% of original stake. 
+2 users stake 2k PLUME into `stPlumeMinter.sol`, and `stPlumeMinter.sol` then stakes 2k plume into `PlumeStaking`. `stPlumeMinter` has 2 validators, so let's assume 1k PLUME is then staked on each of these validators on PlumeStaking side
+
+- After 15 days, user 1 unstakes his 1k PLUME, this then triggers unstaking 1k PLUME from validator 1 on the PlumeStaking side. the total cooling amount on PlumeStaking side will be 1k PLUME and the total staked will be 1k PLUME (that is staked on validator 2). the 1k PLUME cooling (unstaked from validator1) will be available to be claimed on day 36 (because of 21 day cooldown)
+
+- on day 18 a slash occurs on validator1, this means all the 1k cooling amount (unstake from validator1) will be forfeited. slashes deduct the entire 100% stake/cooling of a validator, its always 100% forfeited in both active stake and cooling amount for that validator.
+
+now, if at day 36 or day 37 user 1 calls `withdraw()`, his transaction will revert because `uint256 totalWithdrawable = plumeStaking.amountWithdrawable()` will return 0. also, they can't request any new withdrawal because their entire 1k frxETH has been burnt. 
+
 
 ## fix
 1. Instead of locking in the claimable ETH amount at unstake time, store the user's percentage share of the total frxETH supply. Then, during `withdraw()`, recalculate the actual withdrawal amount using the current pool value from `plumeStaking.amountWithdrawable()` (i.e., post-slash).
 This ensures slashing risk is shared proportionally among all stakers, and prevents DoS or overclaiming exploits. 
+
+-After several thoughts, id say this is a business risk bug and users should be notified in the front-end that if a slash occurs on the validators they staked on and they had pending unstake, that the pending unstake cannot be fulfilled since their validator got slashed. 
 
 
 ## [M-04] Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required.
