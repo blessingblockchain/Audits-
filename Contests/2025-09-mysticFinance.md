@@ -20,8 +20,7 @@ My Finding Summay
 |[L-03](#l-03-unused-fucntion-`_getCoolDownPerValidator`-in-`stPlumeMinter.sol`)| Unused Function `_getCoolDownPerValidator` in `stPlumeMinter.sol`. |LOW|
 |[L-04](#l-04-potential-division-by-zero-in-`getMyPlumePrice`-function-in-`MyPLumeFeed.sol`)| Potential division by zero in `getMyPlumePrice` function in `MyPLumeFeed.sol`. |LOW|
 ||||
-|[I-01](#i-01-reward-tokens-can-be-withdrawn-due-to-missing-check-in-`recoverERC20`-fucntion)| Reward tokens can be withdrawn due to missing check in `recoverERC20` function |INFO|
-|[I-02](#i-02-Unnecessary-Conditional-Check-in-`resetUserRewardsAfterClaim`)| Unnecessary Conditional Check in`resetUserRewardsAfterClaim` |INFO|
+|[I-01](#i-01-Unnecessary-Conditional-Check-in-`resetUserRewardsAfterClaim`)| Unnecessary Conditional Check in`resetUserRewardsAfterClaim` |INFO|
 
 |GAS OPTIMIZATIONS. 
 
@@ -3528,30 +3527,8 @@ function getMyPlumePrice() public view returns (uint256) {
 ---
 
 
-## [I-01]  Reward tokens can be withdrawn due to missing check in `recoverERC20` function.
 
-## Description
-
-The `recoverERC20` function in `frxETHMinter.sol` lacks essential protections against withdrawal of core protocol tokens and reward tokens. 
-
-```solidity
-// frxETHMinter.sol lines 147-151
-function recoverERC20(address tokenAddress, uint256 tokenAmount, address to) external onlyByOwnGov {
-    require(IERC20(tokenAddress).transfer(to, tokenAmount), "recoverERC20: Transfer failed");
-    emit EmergencyERC20Recovered(tokenAddress, tokenAmount);
-}
-```
-
-In case there are inclusions of a future reward token in ERC20, a check should be ensured that when this is called, those reward tokens are separated. 
-
-Add this check, incase of that.
-
-```solidity
- // Missing: require(tokenAddress != nativeToken, Cannot recover native token)
-```
-
-
-## [i-02] Unnecessary Conditional Check in `resetUserRewardsAfterClaim`
+## [i-01] Unnecessary Conditional Check in `resetUserRewardsAfterClaim`
 
 ## Description
 
