@@ -8,16 +8,16 @@ My Finding Summay
 [H-02](#h-03-when-a-validator-slash-occurs-in-plumeStaking.sol-the-minted-synthetic-tokens-aka-frxETH-is-still-in-possession-of-the-user-and-can-be-used-to-steal-from-other-users-via-pooled-unstakes-in-`stPlumeMinter.sol`)|When a validator slash occurs in plumeStaking.sol, the minted synthetic tokens aka frxETH is still in possession of the user and can be used to steal from other users via pooled unstakes in `stPlumeMinter.sol`|HIGH|
 |[H-03](#h-04-Reward-Claim-Calculation-Function-is-Wrong-and-Will-Lead-to-Much-and-Much-LesS-Rewards-Claimable-for-Every-User-in-PLUME.)|Reward Claim Calculation Function is Wrong and Will Lead to Much and Much Less Rewards Claimable for Every User in PLUME.|HIGH|
 ||||
-|[M-01](#m-02-a-validator-percentage-limit-can-be-bypassed-in-`stPlumeMinter.sol`-when-`validatorId!=0`)|A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.|MEDIUM|
-|[M-02](#m-03-In-no-reward-scenario,-there-would-be-a-persistent-undervaluation-of-myPlumeTokens-in-`myPlumeFeed.sol`)|In no reward scenario, there would be a persistent undervaluation of myPlumeTokens in `myPlumeFeed.sol` |MEDIUM|
-|[M-03](#m-04-Unstaking-calculates-user-share-at-request-time,-ignoring-slashing-leading-to-DOS-and-unfair-distribution-in-`stPlumeMinter.sol`)|Unstaking Calculates User Share at Request Time, Ignoring Slashing  Leading to DoS and Unfair Distribution in `stPlumeMinter.sol` |MEDIUM|
-|[M-04](#m-05-Dos-in-`removeValidator`-function-due-to-unbounded-loop-in-OperatorRegistry.sol`)|DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`  |MEDIUM|
-|[M-05](#m-06-Dos-in-`unstakefunction`-when-no-specific-validator-is-provided)|Dos in `unstakefunction` when no specific validator is provided. |MEDIUM|
-|[M-06](#m-07-Inflated-Cooldown-Timestamps-in-`stPlumeMinter.sol`-Leading-to-Excessive-Withdrawal-Delays-than-required)| Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required. |MEDIUM|
+|[M-01](#m-01-a-validator-percentage-limit-can-be-bypassed-in-`stPlumeMinter.sol`-when-`validatorId!=0`)|A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.|MEDIUM|
+|[M-02](#m-02-In-no-reward-scenario,-there-would-be-a-persistent-undervaluation-of-myPlumeTokens-in-`myPlumeFeed.sol`)|In no reward scenario, there would be a persistent undervaluation of myPlumeTokens in `myPlumeFeed.sol` |MEDIUM|
+|[M-03](#m-03-Unstaking-calculates-user-share-at-request-time,-ignoring-slashing-leading-to-DOS-and-unfair-distribution-in-`stPlumeMinter.sol`)|Unstaking Calculates User Share at Request Time, Ignoring Slashing  Leading to DoS and Unfair Distribution in `stPlumeMinter.sol` |MEDIUM|
+|[M-04](#m-04-Inflated-Cooldown-Timestamps-in-`stPlumeMinter.sol`-Leading-to-Excessive-Withdrawal-Delays-than-required)| Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required. |MEDIUM|
 ||||
+|[L-01](#L-01-Dos-in-`removeValidator`-function-due-to-unbounded-loop-in-OperatorRegistry.sol`)|DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`  |LOW|
 |[L-02](#l-02-missing-reward-rate-validation-in-`stPlumeRewards.sol`)|Missing reward rate validation in `stPlumeReward.sol`. |LOW|
 |[L-03](#l-03-unused-fucntion-`_getCoolDownPerValidator`-in-`stPlumeMinter.sol`)| Unused Function `_getCoolDownPerValidator` in `stPlumeMinter.sol`. |LOW|
 |[L-04](#l-04-potential-division-by-zero-in-`getMyPlumePrice`-function-in-`MyPLumeFeed.sol`)| Potential division by zero in `getMyPlumePrice` function in `MyPLumeFeed.sol`. |LOW|
+|[L-05](#l-05-Dos-in-`unstakefunction`-when-no-specific-validator-is-provided)|Dos in `unstakefunction` when no specific validator is provided. |MEDIUM|
 ||||
 |[I-01](#i-01-Unnecessary-Conditional-Check-in-`resetUserRewardsAfterClaim`)| Unnecessary Conditional Check in`resetUserRewardsAfterClaim` |INFO|
 
@@ -2594,71 +2594,6 @@ Evidence of slashing awareness in the codebase:
 This ensures slashing risk is shared proportionally among all stakers, and prevents DoS or overclaiming exploits. 
 
 
-## [M-04] DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`
-
-## Description
-
-The `removeValidator()` function in `OperatorRegistry.sol` contains a gas-intensive operation when `dont_care_about_ordering = false` that can lead to out-of-gas errors and denial of service for validator removal operations. The function implements two removal strategies, but the "preserve ordering" path uses an unbounded loop that becomes prohibitively expensive as the validator set grows.
-
-When `dont_care_about_ordering = false`, the function:
-- Copies entire validator array to memory (expensive)
-- Loops through all validators to rebuild array without the target (expensive) especially when the list is large.
-
-```solidity
-// More gassy, loop
-else {
-    // Save the original validators
-    Validator[] memory original_validators = validators;  // ← EXPENSIVE: Copy entire array
-
-    // Clear the original validators list
-    delete validators;  // ← EXPENSIVE: Clear storage array
-
-    // Fill the new validators array with all except the value to remove
-    for (uint256 i = 0; i < original_validators.length; ++i) {  // ← UNBOUNDED LOOP
-        if (i != remove_idx) {
-            validators.push(original_validators[i]);  // ← EXPENSIVE: Multiple SSTOREs
-        }
-    }
-}
-```
-
-## Root cause 
-
-
-The gas consumption grows O(n) with the number of validators, where each iteration involves:
-- Memory read from original_validators[i]
-- Conditional check i != remove_idx
-- Storage write via validators.push() (expensive SSTORE operation)
-For `large validator sets (100+ validators)`, this can easily exceed block gas limits, making validator removal impossible.
-
-## IMpact
-- Denial of Service for Validator Management
-
-##  fix
-- Implement Efficient Ordered Removal
-- Batch Removal Function
-
-## [M-05] Dos in the `unstakefunction` when no specific validator is provided. 
-
-## Description
-The `_unstake `function contains a loop that iterates over all validators `(numValidators())` when no specific `_validatorId` is provided `(i.e., _validatorId == 0)`. This loop checks each validator's status, stakes, and queues unstake amounts, potentially triggering `_processBatchUnstake` for multiple validators per transaction.
-
-In scenarios with many simultaneous unstakes across validators, this can lead to excessive gas consumption. The issue is exacerbated if the number of validators is large, as each iteration involves storage reads, external calls to plumeStaking. 
-
-## impact 
-
-1. Dos. 
-
-## Root Cause
-
-The root cause is unbounded iteration over an unbounded list of validators in the loop `(while (index < numVals ...))`. Without a cap on iterations or gas checks, the gas cost scales linearly with the number of validators. External calls `(plumeStaking.getValidatorStats, plumeStaking.getUserValidatorStake, and plumeStaking.unstake in _processBatchUnstake)` add variable gas overhead, making it prone to exceeding block limits when validator count grows or multiple batch processes trigger.
-
-
-## Severity
-
-The issue is not always exploitable but becomes severe in mature systems with many validators. 
-
-
 ## [M-06] Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required.
 
 ## Description
@@ -3306,7 +3241,53 @@ assertGt(user1BalanceAfter - user1BalanceBefore, 0, "User A should receive ETH")
 ---
 
 
-## [L-01] Missing reward rate validation in `stPlumeReward.sol`.
+
+## [L-01] DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`
+
+## Description
+
+The `removeValidator()` function in `OperatorRegistry.sol` contains a gas-intensive operation when `dont_care_about_ordering = false` that can lead to out-of-gas errors and denial of service for validator removal operations. The function implements two removal strategies, but the "preserve ordering" path uses an unbounded loop that becomes prohibitively expensive as the validator set grows.
+
+When `dont_care_about_ordering = false`, the function:
+- Copies entire validator array to memory (expensive)
+- Loops through all validators to rebuild array without the target (expensive) especially when the list is large.
+
+```solidity
+// More gassy, loop
+else {
+    // Save the original validators
+    Validator[] memory original_validators = validators;  // ← EXPENSIVE: Copy entire array
+
+    // Clear the original validators list
+    delete validators;  // ← EXPENSIVE: Clear storage array
+
+    // Fill the new validators array with all except the value to remove
+    for (uint256 i = 0; i < original_validators.length; ++i) {  // ← UNBOUNDED LOOP
+        if (i != remove_idx) {
+            validators.push(original_validators[i]);  // ← EXPENSIVE: Multiple SSTOREs
+        }
+    }
+}
+```
+
+## Root cause 
+
+
+The gas consumption grows O(n) with the number of validators, where each iteration involves:
+- Memory read from original_validators[i]
+- Conditional check i != remove_idx
+- Storage write via validators.push() (expensive SSTORE operation)
+For `large validator sets (100+ validators)`, this can easily exceed block gas limits, making validator removal impossible.
+
+## IMpact
+- Denial of Service for Validator Management
+
+##  fix
+- Implement Efficient Ordered Removal
+- Batch Removal Function
+
+
+## [L-02] Missing reward rate validation in `stPlumeReward.sol`.
 
 ## Description
 
@@ -3381,6 +3362,26 @@ function getMyPlumePrice() public view returns (uint256) {
     return getTotalDeposits() * 1e18 / totalSupply;
 }
 ```
+
+## [L-05] Dos in the `unstakefunction` when no specific validator is provided. 
+
+## Description
+The `_unstake `function contains a loop that iterates over all validators `(numValidators())` when no specific `_validatorId` is provided `(i.e., _validatorId == 0)`. This loop checks each validator's status, stakes, and queues unstake amounts, potentially triggering `_processBatchUnstake` for multiple validators per transaction.
+
+In scenarios with many simultaneous unstakes across validators, this can lead to excessive gas consumption. The issue is exacerbated if the number of validators is large, as each iteration involves storage reads, external calls to plumeStaking. 
+
+## impact 
+
+1. Dos. 
+
+## Root Cause
+
+The root cause is unbounded iteration over an unbounded list of validators in the loop `(while (index < numVals ...))`. Without a cap on iterations or gas checks, the gas cost scales linearly with the number of validators. External calls `(plumeStaking.getValidatorStats, plumeStaking.getUserValidatorStake, and plumeStaking.unstake in _processBatchUnstake)` add variable gas overhead, making it prone to exceeding block limits when validator count grows or multiple batch processes trigger.
+
+
+## Severity
+
+The issue is not always exploitable but becomes severe in mature systems with many validators. 
 
 
 
