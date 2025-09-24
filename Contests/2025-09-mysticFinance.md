@@ -8,13 +8,12 @@ My Finding Summay
 [H-02](#h-03-when-a-validator-slash-occurs-in-plumeStaking.sol-the-minted-synthetic-tokens-aka-frxETH-is-still-in-possession-of-the-user-and-can-be-used-to-steal-from-other-users-via-pooled-unstakes-in-`stPlumeMinter.sol`)|When a validator slash occurs in plumeStaking.sol, the minted synthetic tokens aka frxETH is still in possession of the user and can be used to steal from other users via pooled unstakes in `stPlumeMinter.sol`|HIGH|
 |[H-03](#h-04-Reward-Claim-Calculation-Function-is-Wrong-and-Will-Lead-to-Much-and-Much-LesS-Rewards-Claimable-for-Every-User-in-PLUME.)|Reward Claim Calculation Function is Wrong and Will Lead to Much and Much Less Rewards Claimable for Every User in PLUME.|HIGH|
 ||||
-|[M-01](#m-01-wrong-math-calculation-in-my-plume-feed-token-price)|Wrong math calculation in my MyplumeFeed Token price. |MEDIUM|
-|[M-02](#m-02-a-validator-percentage-limit-can-be-bypassed-in-`stPlumeMinter.sol`-when-`validatorId!=0`)|A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.|MEDIUM|
-|[M-03](#m-03-In-no-reward-scenario,-there-would-be-a-persistent-undervaluation-of-myPlumeTokens-in-`myPlumeFeed.sol`)|In no reward scenario, there would be a persistent undervaluation of myPlumeTokens in `myPlumeFeed.sol` |MEDIUM|
-|[M-04](#m-04-Unstaking-calculates-user-share-at-request-time,-ignoring-slashing-leading-to-DOS-and-unfair-distribution-in-`stPlumeMinter.sol`)|Unstaking Calculates User Share at Request Time, Ignoring Slashing  Leading to DoS and Unfair Distribution in `stPlumeMinter.sol` |MEDIUM|
-|[M-05](#m-05-Dos-in-`removeValidator`-function-due-to-unbounded-loop-in-OperatorRegistry.sol`)|DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`  |MEDIUM|
-|[M-06](#m-06-Dos-in-`unstakefunction`-when-no-specific-validator-is-provided)|Dos in `unstakefunction` when no specific validator is provided. |MEDIUM|
-|[M-07](#m-07-Inflated-Cooldown-Timestamps-in-`stPlumeMinter.sol`-Leading-to-Excessive-Withdrawal-Delays-than-required)| Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required. |MEDIUM|
+|[M-01](#m-02-a-validator-percentage-limit-can-be-bypassed-in-`stPlumeMinter.sol`-when-`validatorId!=0`)|A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.|MEDIUM|
+|[M-02](#m-03-In-no-reward-scenario,-there-would-be-a-persistent-undervaluation-of-myPlumeTokens-in-`myPlumeFeed.sol`)|In no reward scenario, there would be a persistent undervaluation of myPlumeTokens in `myPlumeFeed.sol` |MEDIUM|
+|[M-03](#m-04-Unstaking-calculates-user-share-at-request-time,-ignoring-slashing-leading-to-DOS-and-unfair-distribution-in-`stPlumeMinter.sol`)|Unstaking Calculates User Share at Request Time, Ignoring Slashing  Leading to DoS and Unfair Distribution in `stPlumeMinter.sol` |MEDIUM|
+|[M-04](#m-05-Dos-in-`removeValidator`-function-due-to-unbounded-loop-in-OperatorRegistry.sol`)|DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`  |MEDIUM|
+|[M-05](#m-06-Dos-in-`unstakefunction`-when-no-specific-validator-is-provided)|Dos in `unstakefunction` when no specific validator is provided. |MEDIUM|
+|[M-06](#m-07-Inflated-Cooldown-Timestamps-in-`stPlumeMinter.sol`-Leading-to-Excessive-Withdrawal-Delays-than-required)| Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required. |MEDIUM|
 ||||
 |[L-02](#l-02-missing-reward-rate-validation-in-`stPlumeRewards.sol`)|Missing reward rate validation in `stPlumeReward.sol`. |LOW|
 |[L-03](#l-03-unused-fucntion-`_getCoolDownPerValidator`-in-`stPlumeMinter.sol`)| Unused Function `_getCoolDownPerValidator` in `stPlumeMinter.sol`. |LOW|
@@ -1864,147 +1863,9 @@ The above poc when logged totally and specifcally demonstrated each impacts i sh
 ---
 ---
 
-## [M-01] Wrong math calculation in my MyplumeFeed Token price.
-
-## Description.
-`getMyPlumePrice()` in `MyPlumeFeed.sol` incorrectly calculates the ETH backing per `myPLUME token` by subtracting accumulated rewards instead of adding them. 
-
-In liquid staking tokens (LSTs), the standard mechanism is that rewards increase the backing value without minting new tokens - `"by adding the net rewards back to the PlumeMinter ETH pool without minting new myPLUME tokens, the total ETH backing each myPLUME token increases. This means if you redeem your myPLUME later, you'll get more ETH back than you would have before the rewards were added!"` However, the current calculation treats rewards as a liability rather than an asset. check here for more proof: (https://www.fireblocks.com/report/liquid-staking-101/#:~:text=ETH%20holders%20depositing%20ETH%20into%20a%20liquid%20staking%20platform%20receive%20a%20new%20token%20representing%20an%20access%20key%20to%20the%20pool%20(a%20Liquid%20Staking%20Token%20%E2%80%9CLST%E2%80%9D).%20LSTs%20can%20later%20be%20redeemed%20for%20underlying%20ETH%20(plus%20accrued%20staking%20rewards).)[here]
-
-## Root cause 
-
-In `MyPlumeFeed.sol` line 47, the `getTotalDeposits()` function uses the formula:
-
-```solidity
-return getPlumeStakedAmount() + currentWithheldETH() - totalInstantUnstaked() - getMyPlumeRewards();
-```
-The error is the final term - `getMyPlumeRewards()` which subtracts accumulated rewards from the total backing calculation.
-
-## Impact:
-
-- Token Undervaluation: `myPLUME` tokens appear 6% less valuable than they actually are (0.94 ETH vs 1.04 ETH per token)
-
-## Proof of concept
-
-I mocked the required contracts because the hardcoded adddresses in the forkedtests were failing with "NotActivated" error. There is an assertion test originally that the protocol wrote: 
-
-```solidity
-    function test_getMyPlumePrice() public {
-        assertApproxEqRel(feed.getMyPlumePrice(), 1e18, 5e16);
-    }
-```
-I used it in my poc just to assert the deviation this bug would cause, same assertion also.
-check below: 
 
 
-```solidity
-// SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity ^0.8.0;
-
-import "forge-std/Test.sol";
-import "../../src/Periphery/MyPlumeFeed.sol";
-import "openzeppelin-contracts/contracts/proxy/transparent/ProxyAdmin.sol";
-import "openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-
-// Mock contracts for testing
-contract MockFrxETH {
-    uint256 private _totalSupply = 1000e18;
-    function totalSupply() external view returns (uint256) { return _totalSupply; }
-}
-
-contract MockStPlumeRewards {
-    function rewardPerToken() external pure returns (uint256) { return 0.05e18; }
-    function YIELD_FEE() external pure returns (uint256) { return 100000; }
-    function RATIO_PRECISION() external pure returns (uint256) { return 1000000; }
-    function getYield() external pure returns (uint256) { return 0.05e18; }
-}
-
-contract MockStPlumeMinter {
-    function currentWithheldETH() external pure returns (uint256) { return 100e18; }
-    function totalInstantUnstaked() external pure returns (uint256) { return 10e18; }
-    function REDEMPTION_FEE() external pure returns (uint256) { return 150; }
-    function INSTANT_REDEMPTION_FEE() external pure returns (uint256) { return 5000; }
-}
-
-contract MockPlumeStaking {
-    struct StakeInfo { uint256 staked; uint256 cooled; uint256 parked; }
-    function stakeInfo(address) external pure returns (StakeInfo memory) {
-        return StakeInfo({ staked: 900e18, cooled: 0, parked: 0 });
-    }
-    function getClaimableReward(address, address) external pure returns (uint256) { return 20e18; }
-}
-
-contract MyPlumeFeedForkTest is Test {
-    MyPlumeFeed feed;
-    MockFrxETH mockMyPlume;
-    MockStPlumeRewards mockRewards;
-    MockStPlumeMinter mockMinter;
-    MockPlumeStaking mockPlumeStaking;
-
-    function setUp() public {
-        // Deploy mock contracts
-        mockMyPlume = new MockFrxETH();
-        mockRewards = new MockStPlumeRewards();
-        mockMinter = new MockStPlumeMinter();
-        mockPlumeStaking = new MockPlumeStaking();
-        
-        // Deploy MyPlumeFeed with mocks instead of hardcoded addresses
-        ProxyAdmin admin = new ProxyAdmin();
-        MyPlumeFeed impl = new MyPlumeFeed();
-        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(address(impl), address(admin), bytes(""));
-        MyPlumeFeed minter = MyPlumeFeed(payable(address(proxy)));
-        
-        // Use mock addresses instead of hardcoded ones
-        minter.initialize(
-            address(mockMyPlume),      // instead of 0x5c982097b505A3940823a11E6157e9C86aF08987
-            address(mockMinter),       // instead of 0xE4274Bc25BA313364DE71F104acF27746c6278Cb
-            address(mockRewards),      // instead of 0x2E420ac76a43fC94F05168Cb8DCf4996b717dA17
-            address(mockPlumeStaking)  // instead of 0x30c791E4654EdAc575FA1700eD8633CB2FEDE871
-        );
-        feed = MyPlumeFeed(payable(address(proxy)));
-    }
-
-
-    function test_getMyPlumePrice() public {
-        uint256 price = feed.getMyPlumePrice();
-        
-        // EXPECTED LOGIC (CORRECT):
-        // Total backing should be: 900 + 100 - 10 + 50 = 1040 ETH (ADD rewards)
-        // Price should be: 1040 ETH / 1000 tokens = 1.04 ETH per token
-        
-        // ACTUAL BUGGY LOGIC (MyPlumeFeed.sol):
-        // Step 1: getTotalDeposits() - Line 47
-        // return getPlumeStakedAmount() + currentWithheldETH() - totalInstantUnstaked() - getMyPlumeRewards();
-        // return 900 + 100 - 10 - 50 = 940 ETH (SUBTRACTS rewards)
-        
-        // Step 2: getMyPlumePrice() - Line 51  
-        // return getTotalDeposits() * 1e18 / totalSupply();
-        // return 940 ETH * 1e18 / 1000 tokens = 0.94 ETH per token 
-        
-        // Assert that the price deviation is greater than 5% (5e16) to prove the bug
-        uint256 deviation = price < 1e18 ? ((1e18 - price) * 1e18) / 1e18 : ((price - 1e18) * 1e18) / 1e18;
-        assertGt(deviation, 5e16, "Price deviation should be > 5% due to calculation bug"); 
-    }
-}    
-```
-
-A 6% undervaluation proven by `assertGt(deviation, 5e16)` shows the wrong math. 
-
-## Fix 
-- Change line 47 in `MyPlumeFeed.sol`:
-
-```solidity
-// Current (wrong):
-return getPlumeStakedAmount() + currentWithheldETH() - totalInstantUnstaked() - getMyPlumeRewards();
-
-// Fixed (correct):
-return getPlumeStakedAmount() + currentWithheldETH() - totalInstantUnstaked() + getMyPlumeRewards();
-```
-Simply change the final operator `from - to +` to properly add rewards to the backing calculation.
-
-
-
-## [M-02] A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.
+## [M-01] A validator percentage limit can be bypassed in `stPlumeMinter.sol` when `validatorId != 0`.
 
 ## Description
 
@@ -2627,7 +2488,7 @@ contract StPlumeMinterForkTestMain is Test {
 submitForValidator(1) → _submit(user, 1) → _depositEther(amount, 1) → Direct staking (NO PERCENTAGE CHECK)
 ```
 
-## [M-03] In no reward scenario, there would be a persistent undervaluation of myPlumeTokens in `myPlumeFeed.sol`
+## [M-02] In no reward scenario, there would be a persistent undervaluation of myPlumeTokens in `myPlumeFeed.sol`
 
 ## Description
 
@@ -2658,7 +2519,7 @@ When no new rewards are accrued, `stPlumeRewards.rewardPerToken()` remains stati
 
 
 
-## [M-04] Unstaking Calculates User Share at Request Time, Ignoring Slashing Leading to DoS and Unfair Distribution in `stPLumeMinter.sol`
+## [M-03] Unstaking Calculates User Share at Request Time, Ignoring Slashing Leading to DoS and Unfair Distribution in `stPLumeMinter.sol`
 
 ## Description
 
@@ -2733,7 +2594,7 @@ Evidence of slashing awareness in the codebase:
 This ensures slashing risk is shared proportionally among all stakers, and prevents DoS or overclaiming exploits. 
 
 
-## [M-05] DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`
+## [M-04] DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`
 
 ## Description
 
@@ -2777,7 +2638,7 @@ For `large validator sets (100+ validators)`, this can easily exceed block gas l
 - Implement Efficient Ordered Removal
 - Batch Removal Function
 
-## [M-06] Dos in the `unstakefunction` when no specific validator is provided. 
+## [M-05] Dos in the `unstakefunction` when no specific validator is provided. 
 
 ## Description
 The `_unstake `function contains a loop that iterates over all validators `(numValidators())` when no specific `_validatorId` is provided `(i.e., _validatorId == 0)`. This loop checks each validator's status, stakes, and queues unstake amounts, potentially triggering `_processBatchUnstake` for multiple validators per transaction.
@@ -2798,7 +2659,7 @@ The root cause is unbounded iteration over an unbounded list of validators in th
 The issue is not always exploitable but becomes severe in mature systems with many validators. 
 
 
-## [M-07] Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required.
+## [M-06] Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required.
 
 ## Description
 
