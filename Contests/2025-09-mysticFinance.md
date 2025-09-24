@@ -13,6 +13,7 @@ My Finding Summay
 |[M-03](#m-03-Unstaking-calculates-user-share-at-request-time,-ignoring-slashing-leading-to-DOS-and-unfair-distribution-in-`stPlumeMinter.sol`)|Unstaking Calculates User Share at Request Time, Ignoring Slashing  Leading to DoS and Unfair Distribution in `stPlumeMinter.sol` |MEDIUM|
 |[M-04](#m-04-Inflated-Cooldown-Timestamps-in-`stPlumeMinter.sol`-Leading-to-Excessive-Withdrawal-Delays-than-required)| Inflated Cooldown Timestamps in `stPlumeMinter.sol` Leading to Excessive Withdrawal Delays than required. |MEDIUM|
 |[M-05](#m-05-when-users-claims-rewards,-the-new-claimed-reward-is-not-included-as-part-of-the-reward-rate-used-to-calculate-the-user-rewards.)|when users claims rewards, the new claimed reward is not included as part of the reward rate used to calculate the unser rewards. |MEDIUM|
+|[M-06](#m-06-Because-of-the-last-part-getMyPlumeRewards()`-of-the-`getTotalDeposits()`-function,-prices-returned-from-the-price-feed-will-be-wrong.-The-problem-arises-because-the-earned-rewards-are-restaked-back-into-Plume-and-not-siloed-into-the-stPlumeRewards.sol-contract)|Because of the last part `- getMyPlumeRewards()` of the `getTotalDeposits()` function, prices returned from the price feed will be wrong. The problem arises because the earned rewards are restaked back into Plume and not siloed into the stPlumeRewards.sol contract. . |MEDIUM|
 ||||
 |[L-01](#L-01-Dos-in-`removeValidator`-function-due-to-unbounded-loop-in-OperatorRegistry.sol`)|DoS in `removeValidator()` Function Due to Unbounded Loop in `OperatorRegistry.sol`  |LOW|
 |[L-02](#l-02-missing-reward-rate-validation-in-`stPlumeRewards.sol`)|Missing reward rate validation in `stPlumeReward.sol`. |LOW|
@@ -4017,6 +4018,116 @@ contract StPlumeMinterForkTestMain is Test {
     }
 }
 ```
+
+## [M-06] Because of the last part `- getMyPlumeRewards()` of the `getTotalDeposits()` function, prices returned from the price feed will be wrong. The problem arises because the earned rewards are restaked back into Plume and not siloed into the `stPlumeRewards.sol` contract. 
+
+## Description
+
+In `plumeFeed.sol`, lets take a look at these fucntions: 
+
+```solidity
+function getTotalDeposits() public view returns (uint256) {
+        return getPlumeStakedAmount() + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalInstantUnstaked() - getMyPlumeRewards();
+    }
+    
+    function getMyPlumePrice() public view returns (uint256) {
+        return getTotalDeposits() * 1e18 / myPlume.totalSupply();
+    }
+    
+    function getPlumeStakedAmount() public view returns (uint256) {
+        return plumeStaking.stakeInfo(address(stPlumeMinter)).staked;
+    }
+    
+    function getMyPlumeRewards() public view returns (uint256) {
+        return (stPlumeRewards.rewardPerToken() * myPlume.totalSupply()) / 1e18;
+    }
+```
+
+## We will use two scenarios to understand this issue:
+
+1. Scenario 1:
+
+- Say a user deposited 1k PLUME and there is no percentage withheld, that means, we mint 1k frxETH to the user, then stake 1k PLUME into `PlumeStaking`. The `currentWithheldETH` will be 0, while `getPlumeStakedAmount()` will be 1000e18. Also, `totalInstantUnstaked` will be 0 at this time.
+
+- Then a week go by and rewards have been earned with a `rewardPerToken` of 0.05e18. This means 50 PLUME has been earned in that 7 days. If you recall, we restake EARNED plume into PlumeStaking. So now, `getPlumeStakedAmount` will be 1050e18 and no longer 1000e18 since rewards were also restaked.
+
+- If we then query `getMyPlumePrice()`, this is what it returns:
+
+```solidity
+function getTotalDeposits() public view returns (uint256) {
+        return 1050e18 + 0 - 0 - 50000000000000000000; // = 1×10²¹
+    }
+
+function getMyPlumePrice() public view returns (uint256) {
+        return getTotalDeposits() * 1e18 / myPlume.totalSupply();
+        // 1×10²¹ * 1e18 / 1000e18 = 1,000,000,000,000,000,000
+    }
+```
+
+As you can see in this first scenario, even though 50 PLUME rewards were earned and then restaked back, the price says 1 PLUME is 1 frxETH from the price feed even though the price should be: 1,050,000,000,000,000,000 which means 1 frxETH is worth 1.05 PLUME since yield has been earned from staking.
+
+2. Scenario 2:
+
+- Let's assume that we have 2 users who each deposited 1k PLUME. so frxETH total supply will be 2000e18, `currentWitheldETH` is 0 since we don't hold onto any percentage of deposits right now and `totalInstantUnstaked` will also be 0.
+
+- We earn 50 PLUME rewards, the reward rate will be 0.05e18. User 1 then goes on to unstake 200 PLUME (200 frxETH is burnt from him), user 2 also goes on to unstake 200e18 (200 frxETH is also burnt from him as well). Total supply of frxETH is now 1600, `currentWitheldETH` as well as `totalInstantUnstaked` will still be 0 at this time.
+
+- After the cooldown ends, user 1 then proceeds to call `withdraw()`. We will withdraw 400 PLUME (from parked balance unstaked 21 days ago) from PlumeStaking and the total staked amount we now have on PlumeStaking will be 1650 PLUME (1600 from users, and 50 from restaked rewards). User 1 will receive 200 PLUME, `currentWithheldETH` will now be be 200e18, `totalInstantUnstaked` will be 200e18
+
+- Now, total supply of frxETH will be 1600e18, Plume rewards earned and restaked will be 50e18, `currentWithheldETH` will be 200e18, rewardPerToken will be 0.05e18, and `totalInstantUnstaked` will be 200e18 since user 2 has not gone to call withdraw to finalize his withdrawal yet.
+
+```solidity
+function getTotalDeposits() public view returns (uint256) {
+        return getPlumeStakedAmount() + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalInstantUnstaked() - getMyPlumeRewards();
+    }
+    
+    function getMyPlumePrice() public view returns (uint256) {
+        return getTotalDeposits() * 1e18 / myPlume.totalSupply();
+    }
+    
+    function getPlumeStakedAmount() public view returns (uint256) {
+        return plumeStaking.stakeInfo(address(stPlumeMinter)).staked;
+    }
+    
+    function getMyPlumeRewards() public view returns (uint256) {
+        return (stPlumeRewards.rewardPerToken() * myPlume.totalSupply()) / 1e18;
+    }
+```
+## Calculation for getMyPlumePrice will then be:
+
+```solidity
+function getTotalDeposits() public view returns (uint256) {
+        return 1650e18 + 200e18 - 200e18 - 50e18; // 1.6×10²¹
+    }
+
+function getMyPlumePrice() public view returns (uint256) {
+    return getTotalDeposits() * 1e18 / myPlume.totalSupply();
+    // 1.6×10²¹ * 1e18 / 1600e18 = 1,000,000,000,000,000,000
+}    
+```
+
+- This calculation says that `1 frxETH` is worth `1 PLUME`. Again, this is wrong. What happened to the 50 PLUME rewards we earned? The price should be: 1,031,250,000,000,000,000 meaning 1 frxETH is worth 1.0325 PLUME.
+
+## Root cause
+
+- The culprit is `getMyPlumeRewards()` inside this function:
+
+```solidity
+function getTotalDeposits() public view returns (uint256) {
+        return getPlumeStakedAmount() + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalInstantUnstaked() - getMyPlumeRewards();
+    }
+```
+
+## Fix 
+
+- It should be: 
+```solidity
+function getTotalDeposits() public view returns (uint256) {
+        return getPlumeStakedAmount() + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalInstantUnstaked();
+    }
+```
+
+
 ---
 ---
 ---
