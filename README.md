@@ -49,3 +49,7 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |Contest|Description|Findings|Rank|Report|
 |:------|:----------|:-------|:--:|:----:|
 |[ASTERA-FINANCE]()|ERC721-based-withdraw-cooldown-mechanism| [1 M](Contests/2025-09-astera.md)|- | - |
+
+|Contest|Description|Findings|Rank|Report|
+|:------|:----------|:-------|:--:|:----:|
+|[MYSTIC-FINANCE]()|A Liquid Restaking Protocol| [3 H, 6 M, 5 L, 1 I](Contests/2025-09-mysticFinance.md)|- | - |
