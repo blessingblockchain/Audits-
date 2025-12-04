@@ -3,7 +3,31 @@ This is my Audit portfolio collecting the contests I participated in and my enga
 
 
 ## About demonhat
-I am an Independent Web3 security researcher, focusing on Dapps, and DeFi.
+I am a smart contract auditor with experience across major web3 security platforms and real-world protocol reviews. I combine public contest performance with private-sector AI tooling experience and private-audit experience. 
+
+- 20+ private audit at Octane Security.
+- 10+ public audit contests on Code4rena, Cantina, and CodeHawks.
+- Found more than 30+ confirmed H/Ms in public contests.
+- Worked with Octane Security as a Fulltime Security Researcher. 
+
+## Languages
+- Solidity
+- Rust 
+- Golang 
+
+## Expertise 
+I've audited projects in the following categories:
+
+- Lending and Borrowing
+- Synthetic tokens
+- Vaults and Yield Aggregators
+- AMMs (Automated Market Makers)
+- Vesting
+- Staking
+- Launchpads
+
+And a lot more..
+
 
 This is a portfolio of my profile on [Cantina](https://cantina.xyz/)
 
@@ -71,9 +95,6 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |:------|:----------|:-------|:--:|:----:|
 |[VENICE]()|Staking-Protocol| [1 H, 1 M](Contests/2025-01-Venice.md)|- | - |
 
-
-|Contest|Description|Findings|Rank|Report|
-|:------|:----------|:-------|:--:|:----:|
 |[ASTERA-FINANCE]()|ERC721-based-withdraw-cooldown-mechanism| [1 M](Contests/2025-09-astera.md)|- | - |
 
 |Contest|Description|Findings|Rank|Report|
