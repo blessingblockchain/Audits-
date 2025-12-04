@@ -5,7 +5,7 @@ This is my Audit portfolio collecting the contests I participated in and my enga
 ## About demonhat
 I am a smart contract auditor with experience across major web3 security platforms and real-world protocol reviews. I combine public contest performance with private-sector AI tooling experience and private-audit experience. 
 
-- 20+ private audit at Octane Security.
+- 20+ private audit at *Octane Security*.
 - 10+ public audit contests on Code4rena, Cantina, and CodeHawks.
 - Found more than 30+ confirmed H/Ms in public contests.
 - Worked with Octane Security as a Fulltime Security Researcher. 
