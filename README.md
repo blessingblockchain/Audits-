@@ -38,6 +38,32 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |:------|:----------|:-------|:--:|:----:|
 |[METROPOLIS]()|Liquidity-Vaults-books| [2 M](Contests/2025-04-Metropolis.md)|- | - |
 
+
+## Private Security reveiws 
+
+|Protocol|Date|Firm|Report| 
+|:--------|:----|:----|:------:|
+|246-core|October 2025|Octane_Security|Private|
+|capricorn-main|October 2025|Octane_Security|Private|
+|trust-biz|October 2025|Octane_Security|Private|
+|panoptic-next-core|October 2025|Octane_Security|Private|
+|marinde-finance-liquid-staking-program|October 2025|Octane_Security|Private|
+|mellow-finance-alm|October 2025|Octane_Security|Private|
+|drxtrade_v2|November 2025|Octane_Security|Private|
+|coophive-alkahest-review|November 2025|Octane_Security|Private|
+|monday-v3-contracts|November 2025|Octane_Security|Private|
+|super-loop|October 2025|Octane_Security|Private|
+|Berachain-internal|October 2025|Octane_Security|Private|
+|Gamma-swap|October 2025|Octane_Security|Private|
+|Impulse||October 2025|Octane_Security|Private|
+|ETO|October 2025|Octane_Security|Private|
+|Chainlink|October 2025|Octane_Security|Private|
+|morphous|October 2025|Octane_Security|Private|
+|Zer0pulse-main|October 2025|Octane_Security|Private|
+|Skymavis-AxieBattlePass|October 2025|Octane_Security|Private|
+|Plofi-Og|October 2025|Octane_Security|Private|
+|ConvenantFi|November 2025|Octane_Security|Private|
+
 ## Private Audit
 
 
