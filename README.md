@@ -3,9 +3,9 @@ This is my Audit portfolio collecting the contests I participated in and my enga
 
 
 ## About demonhat
-I am a smart contract auditor with experience across major web3 security platforms and real-world protocol reviews. I combine public contest performance with private-sector AI tooling experience and private-audit experience. 
+I am a smart contract auditor with experience across major web3 security platforms and real-world protocol reviews. I combine public contest performance and private-audit experience. Also, worked as a Full-time security Engineer at Octane-Security.
 
-- 20+ private audit at *Octane Security*.
+- 20+ private audit at Octane Security.
 - 10+ public audit contests on Code4rena, Cantina, and CodeHawks.
 - Found more than 30+ confirmed H/Ms in public contests.
 - Worked with Octane Security as a Fulltime Security Researcher. 
@@ -95,6 +95,8 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |:------|:----------|:-------|:--:|:----:|
 |[VENICE]()|Staking-Protocol| [1 H, 1 M](Contests/2025-01-Venice.md)|- | - |
 
+|Contest|Description|Findings|Rank|Report|
+|:------|:----------|:-------|:--:|:----:|
 |[ASTERA-FINANCE]()|ERC721-based-withdraw-cooldown-mechanism| [1 M](Contests/2025-09-astera.md)|- | - |
 
 |Contest|Description|Findings|Rank|Report|
