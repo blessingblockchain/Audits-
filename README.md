@@ -55,7 +55,7 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |super-loop|October 2025|Octane_Security|Private|
 |Berachain-internal|October 2025|Octane_Security|Private|
 |Gamma-swap|October 2025|Octane_Security|Private|
-|Impulse||October 2025|Octane_Security|Private|
+|Impulse|October 2025|Octane_Security|Private|
 |ETO|October 2025|Octane_Security|Private|
 |Chainlink|October 2025|Octane_Security|Private|
 |morphous|October 2025|Octane_Security|Private|
