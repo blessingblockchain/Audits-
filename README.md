@@ -69,7 +69,7 @@ All undisclosed engagements can be backed with a reference, in case of interest
 
 
 |Protocol|Firm|Ecosystem|Report| 
-|:--------|:----|:------:|
+|:--------|:----|:---------|:------:|
 |246-core|Octane_Security|EVM|Private|
 |capricorn-main|Octane_Security||EVM|Private|
 |trust-biz|Octane_Security|EVM|Private|
