@@ -74,7 +74,7 @@ All undisclosed engagements can be backed with a reference, in case of interest
 |capricorn-main|Octane_Security||EVM|Private|
 |trust-biz|Octane_Security|EVM|Private|
 |panoptic-next-core|Octane_Security|EVM|Private|
-|marinde-finance-liquid-staking-program|Solana|Octane_Security|Private|
+|marinde-finance-liquid-staking-program|Octane_Security|Solana|Private|
 |mellow-finance-alm|Octane_Security|EVM|Private|
 |drxtrade_v2|Octane_Security|EVM|Private|
 |coophive-alkahest-review|Octane_Security|EVM|Private|
