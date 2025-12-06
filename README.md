@@ -65,28 +65,31 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 
 ## Private Security reveiws 
 
-|Protocol|Date|Firm|Report| 
-|:--------|:----|:----|:------:|
-|246-core|October 2025|Octane_Security|Private|
-|capricorn-main|October 2025|Octane_Security|Private|
-|trust-biz|October 2025|Octane_Security|Private|
-|panoptic-next-core|October 2025|Octane_Security|Private|
-|marinde-finance-liquid-staking-program|October 2025|Octane_Security|Private|
-|mellow-finance-alm|October 2025|Octane_Security|Private|
-|drxtrade_v2|November 2025|Octane_Security|Private|
-|coophive-alkahest-review|November 2025|Octane_Security|Private|
-|monday-v3-contracts|November 2025|Octane_Security|Private|
-|super-loop|October 2025|Octane_Security|Private|
-|Berachain-internal|October 2025|Octane_Security|Private|
-|Gamma-swap|October 2025|Octane_Security|Private|
-|Impulse|October 2025|Octane_Security|Private|
-|ETO|October 2025|Octane_Security|Private|
-|Chainlink|October 2025|Octane_Security|Private|
-|morphous|October 2025|Octane_Security|Private|
-|Zer0pulse-main|October 2025|Octane_Security|Private|
-|Skymavis-AxieBattlePass|October 2025|Octane_Security|Private|
-|Plofi-Og|October 2025|Octane_Security|Private|
-|ConvenantFi|November 2025|Octane_Security|Private|
+All undisclosed engagements can be backed with a reference, in case of interest
+
+
+|Protocol|Firm|Ecosystem|Report| 
+|:--------|:----|:------:|
+|246-core|Octane_Security|EVM|Private|
+|capricorn-main|Octane_Security||EVM|Private|
+|trust-biz|Octane_Security|EVM|Private|
+|panoptic-next-core|Octane_Security|EVM|Private|
+|marinde-finance-liquid-staking-program|Solana|Octane_Security|Private|
+|mellow-finance-alm|Octane_Security|EVM|Private|
+|drxtrade_v2|Octane_Security|EVM|Private|
+|coophive-alkahest-review|Octane_Security|EVM|Private|
+|monday-v3-contracts|Octane_Security|EVM|Private|
+|super-loop|Octane_Security|EVM|Private|
+|Berachain-internal|Octane_Security|EVM|Private|
+|Gamma-swap|Octane_Security|EVM|Private|
+|Impulse|Octane_Security|EVM|Private|
+|ETO|Octane_Security|EVM|Private|
+|Chainlink|Octane_Security|EVM|Private|
+|morphous|Octane_Security|EVM|Private|
+|Zer0pulse-main|Octane_Security|EVM|Private|
+|Skymavis-AxieBattlePass|Octane_Security|EVM|Private|
+|Plofi-Og|Octane_Security|EVM|Private|
+|ConvenantFi|Octane_Security|EVM|Private|
 
 ## Private Audit
 
