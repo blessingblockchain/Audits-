@@ -62,9 +62,9 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |:------|:----------|:-------|:--:|:----:|
 |[METROPOLIS]()|Liquidity-Vaults-books| [2 M](Contests/2025-04-Metropolis.md)|- | - |
 
-|Contest|Description|Findings|Rank|Report|
+|Contest|Description|Findings|X-proof|Report|
 |:------|:----------|:-------|:--:|:----:|
-|[PLUME-NETWORK]()|EVM-compatible-blockchain| [1 C](Contests/2025-10-PlumeNetwork.md)|- | - |
+|[PLUME-NETWORK]()|EVM-compatible-blockchain| [1 C](Contests/2025-10-PlumeNetwork.md)|[Link](https://x.com/adeolRxxxx/status/1967670086778724550?s=20) | - |
 
 |Contest|Description|Findings|x-proof|Report|
 |:------|:----------|:-------|:--:|:----:|
