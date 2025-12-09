@@ -66,6 +66,10 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |:------|:----------|:-------|:--:|:----:|
 |[PLUME-NETWORK]()|EVM-compatible-blockchain| [1 C](Contests/2025-10-PlumeNetwork.md)|- | - |
 
+|Contest|Description|Findings|Rank|Report|
+|:------|:----------|:-------|:--:|:----:|
+|[VECHAIN-STARGATE]()|Staking-Protocol| [1 C](Contests/2025-11-vechain.md)|- | - |
+
 
 ## Private Security reveiws 
 
