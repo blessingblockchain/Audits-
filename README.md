@@ -99,15 +99,6 @@ All undisclosed engagements can be backed with a reference, in case of interest
 |Protocol|Description|Findings|
 |:------|:----------|:-------|
 |[IGNITE-LABS]()|LB-Pair-AMM-DLMM| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|
-
-|Protocol|Description|Findings|
-|:------|:----------|:-------|
 |[VENICE]()|Staking-Protocol| [1 H, 1 M](Contests/2025-01-Venice.md)|
-
-|Protocol|Description|Findings|
-|:------|:----------|:-------|
 |[ASTERA-FINANCE]()|ERC721-based-withdraw-cooldown-mechanism| [1 M](Contests/2025-09-astera.md)|
-
-|Protocol|Description|Findings|
-|:------|:----------|:-------|
 |[MYSTIC-FINANCE]()|A Liquid Restaking Protocol| [3 H, 6 M, 5 L, 1 I](Contests/2025-09-mysticFinance.md)|
