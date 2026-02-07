@@ -42,7 +42,7 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |[Soon](https://cantina.xyz/competitions/08c2b0b4-8449-4136-82a2-7074ccdfffac/leaderboard)|SVM, layer2, OP Stack|[1 H, 4 L](Contests/2024-12-soon.md)|4th|
 |[RAAC](https://codehawks.cyfrin.io/c/2025-02-raac)|Regnum Aurum Acquisition Corp| [6 H, 8 M, 3 L](Contests/2025-02-Raac.md)|- |
 |[JIGSAW](https://cantina.xyz/code/7a40c849-0b35-4128-b084-d9a83fd533ea/findings/465)|Jigsaw Finance: A CDP-based stablecoin protocol| [1 H](Contests/2025-06-jigsaw.md)|- |
-|[METROPOLIS]()|Liquidity-Vaults-books| [2 M](Contests/2025-04-Metropolis.md)|- |
+|[METROPOLIS]()|Liquidity-Vaults-books| [2 M](Contests/2025-04-Metropolis.md)|10th|
 |[PLUME-NETWORK]()|EVM-compatible-blockchain| [1 C](Contests/2025-10-PlumeNetwork.md)|[X-proof](https://x.com/adeolRxxxx/status/1967670086778724550?s=20)|
 |[VECHAIN-STARGATE]()|Staking-Protocol| [1 C](Contests/2025-11-vechain.md)|[X-proof](https://x.com/adeolRxxxx/status/1998345793397194967?s=20)|
 
