@@ -62,7 +62,7 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 
 |Contest|Description|Findings|Rank|Report|
 |:------|:----------|:-------|:--:|:----:|
-|[IGNITE-LABS]()|LB-Pair-AMM-DLMM| [1 H, 2 M, 2 L](Contests/2025-12-IgniteLabs.md)|- | - |
+|[IGNITE-LABS]()|LB-Pair-AMM-DLMM| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|- | - |
 
 
 ## Private Security reveiws 

