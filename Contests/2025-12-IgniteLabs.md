@@ -271,51 +271,65 @@ The compoundLPFee() function allows malicious users (that have earned lp fee), t
 
 ### Example
 
-the user1 has the full liquidity of bin 8 388 608 (for simplicity)
-8 388 608
-reserveX: 5000 1e18
-reserveY: 5000 1e18
-totalShares: 10 000 1e18
-balanceOf(user1)= 10 000 1e18
+The user1 has the full liquidity of bin 8 388 608 (for simplicity):
 
-so far there are 200 1e18 accumulated fees of tokenX, and 400 1e18 accumulated fees of tokenY
+```
+Bin 8 388 608:
+- reserveX: 5000 1e18
+- reserveY: 5000 1e18
+- totalShares: 10 000 1e18
+- balanceOf(user1) = 10 000 1e18
+```
 
-now user1 calls compoundLPFees function to compound
+So far there are 200 1e18 accumulated fees of tokenX, and 400 1e18 accumulated fees of tokenY.
 
-claimableX is 200 1e18 and claimableY is 400 1e18
+Now user1 calls `compoundLPFees` function to compound:
+- claimableX is 200 1e18
+- claimableY is 400 1e18
+- liquidityMinted is 600 1e18
 
-liquidityMinted is 600 1e18
+The bin gets updated so the next state is:
 
-the bin gets updated so the next state is up:
-8 388 608
-reserveX: 5200 1e18
-reserveY: 5400 1e18
-totalShares: 10 000 1e18
+```
+Bin 8 388 608:
+- reserveX: 5200 1e18
+- reserveY: 5400 1e18
+- totalShares: 10 000 1e18 (NOT UPDATED!)
+- balanceOf(user1) = 10 600 1e18
+```
 
-balanceOf (user1) = 10 600 1e18
+But since user1 has been minted with 600 1e18 shares due to compounding, he holds 10 600 1e18 shares (and bin.totalShares hasn't been updated).
 
-but since user1 has been minted with 600 1e18 shares, due to compounding, he holds 10 600 1e18 shares (and bin.totalShares hasn't been updated).
-now he withdraws 10 000 1e18 of his shares (has to do it like that since there is a check in removeLiquidity against the bin.totalShares which are 10 000 1e18 in this case)
-he receives: 5200 1e18 tokenX and 5400 1e18 tokenY, and still has 600 1e18 shares (that were minted during the compounding)
-current state of the bin:
-8 388 608
-reserveX: 0
-reserveY: 0
-totalShares: 0
-balanceOf (user1)= 600 1e18
+Now he withdraws 10 000 1e18 of his shares (has to do it like that since there is a check in removeLiquidity against the bin.totalShares which are 10 000 1e18 in this case):
+- He receives: 5200 1e18 tokenX and 5400 1e18 tokenY
+- Still has 600 1e18 shares (that were minted during the compounding)
 
-now user1 waits for user2 to mint liquidity to this bin (if user2 was already in the bin, from the first call, user1 wouldn't have to wait for him, this scenario in this example is just for simplicity)
-after the user2 has minted 2000 1e18 the bin looks like this:
-8 388 608
-reserveX: 1000 1e18
-reserveY: 1000 1e18
-totalShares: 2000 1e18
-balanceOf (user1)= 600 1e18
-balanceOf (user2)= 2000 1e18
+Current state of the bin:
 
-now user1 is able to burn his remaining 600 1e18 shares
-user1 receives: 300 1e18 tokenX and 300 1e18 tokenY
-user successfully steal additional tokens from other user.
+```
+Bin 8 388 608:
+- reserveX: 0
+- reserveY: 0
+- totalShares: 0
+- balanceOf(user1) = 600 1e18
+```
+
+Now user1 waits for user2 to mint liquidity to this bin (if user2 was already in the bin, from the first call, user1 wouldn't have to wait for him, this scenario in this example is just for simplicity).
+
+After user2 has minted 2000 1e18 the bin looks like this:
+
+```
+Bin 8 388 608:
+- reserveX: 1000 1e18
+- reserveY: 1000 1e18
+- totalShares: 2000 1e18
+- balanceOf(user1) = 600 1e18
+- balanceOf(user2) = 2000 1e18
+```
+
+Now user1 is able to burn his remaining 600 1e18 shares:
+- user1 receives: 300 1e18 tokenX and 300 1e18 tokenY
+- **User successfully steals additional tokens from other user.**
 
 ### Impact
 Users who compound LP fees, are able to steal additional funds from other users from the same bin.
@@ -476,34 +490,52 @@ When executing large swaps, that require the shifting of the activeBin (multi bi
 The issue arises because of the _updateBinFees function, that is called on the end of the swap, is giving the full LpFee amount to only one bin, without considering other activeBin (not active anymore, they were active during the swap) and how much liquidity they have contributed to the swap.
 
 ### Example
-(for simplicity, no protocol fee and volatilityFee)
-activeBin - 666
-reserveX: 1000 * 1e18
-reserveY: 1000 * 1e18
-totalShares: 2000 * 1e18
 
-otherBin -665
-reserveX: 1000 * 1e18
-reserveY: 0
-totalShares: 1000* 1e18
+(For simplicity, no protocol fee and volatilityFee)
 
-user calls swap function and sends 1500 * 1e18 tokenY(after 10% fee, the amountYIn is 1364 * 1e18 and the LpFee is 136 * 1e18 , the swapForY flag is false)
+**Initial State:**
 
-startBin is the current active bin (666), after performing the swap in that active bin the sate is next;
-activeBin - 666
-reserveX: 0
-reserveY: 2000 * 1e18
-totalShares: 2000 * 1e18
+```
+activeBin - 666:
+- reserveX: 1000 * 1e18
+- reserveY: 1000 * 1e18
+- totalShares: 2000 * 1e18
 
-amountInLeft is 364, so we go to the next bin and perform the swap, after the swap the situation is next:
-otherBin -665
-reserveX: 636 * 1e18
-reserveY: 364 * 1e18
-totalShares: 1000* 1e18
+otherBin - 665:
+- reserveX: 1000 * 1e18
+- reserveY: 0
+- totalShares: 1000 * 1e18
+```
 
-since we have moved to the next bin, the bin 665 now becomes the active bin
+User calls swap function and sends 1500 * 1e18 tokenY (after 10% fee, the amountYIn is 1364 * 1e18 and the LpFee is 136 * 1e18, the swapForY flag is false).
 
-now the _updateBinFees is called with the full LpFee amount and new active bin(665), so the LP from that bin get the full fee, even though the liquidity from 666 was also used in the swap.
+**After swap in active bin (666):**
+
+startBin is the current active bin (666), after performing the swap in that active bin the state is:
+
+```
+activeBin - 666:
+- reserveX: 0
+- reserveY: 2000 * 1e18
+- totalShares: 2000 * 1e18
+```
+
+amountInLeft is 364, so we go to the next bin and perform the swap.
+
+**After swap in next bin (665):**
+
+```
+otherBin - 665:
+- reserveX: 636 * 1e18
+- reserveY: 364 * 1e18
+- totalShares: 1000 * 1e18
+```
+
+Since we have moved to the next bin, bin 665 now becomes the active bin.
+
+**The Bug:**
+
+Now `_updateBinFees` is called with the full LpFee amount (136 * 1e18) and new active bin (665), so the LP from that bin gets the **full fee**, even though the liquidity from bin 666 was also used in the swap.
 
 ### Impact
 Liquidity providers from startBin up until newActiveBin-1, do not get any LP fees earned during the multi bin swap.
@@ -523,17 +555,18 @@ Above active price: only token Y
 At active price: mix of X + Y
 
 ### Root Cause
-Normal addLiquidity() enforces this rule properly but compoundLPFees() ignores it completely as it blindly adds both X and Y to any bin making it imbalance
 
-When a user compounds LP fees:
+Normal `addLiquidity()` enforces this rule properly but `compoundLPFees()` ignores it completely as it blindly adds both X and Y to any bin making it imbalanced.
 
-1. The contract reads claimable fees in token X and token Y.
-2. It adds both values together (X + Y) to compute contributed liquidity.
-3. LP shares are minted based on this summed value.
-4. The reserves are updated and LP tokens minted.
-5. User later burns LP tokens and walks away with additional tokens for free - for example burn gives back equal tokens of X and Y(valuable tokens) once their LP tokens are burned but compoundLPFees() added only X tokens (cheap tokens)
+**When a user compounds LP fees:**
 
-File: UmbraeLBPair::compoundLPFees()
+1. The contract reads claimable fees in token X and token Y
+2. It adds both values together (X + Y) to compute contributed liquidity
+3. LP shares are minted based on this summed value
+4. The reserves are updated and LP tokens minted
+5. User later burns LP tokens and walks away with additional tokens for free - for example burn gives back equal tokens of X and Y (valuable tokens) once their LP tokens are burned but `compoundLPFees()` added only X tokens (cheap tokens)
+
+**File:** `UmbraeLBPair::compoundLPFees()`
 
 ### Recommendation
 Make compoundLPFees() behave like addLiquidity() - use LiquidityCalculator to split the fees correctly
@@ -1438,63 +1471,72 @@ Users could (if there is right pair set up) execute a sequence of small swaps ba
 
 ### Example (will use low liquidity pair)
 
-Active bin - 8 388 608
-reserveX: 1
-reserveY: 1
-totalShares: 2
+**Initial State:**
 
-Other bin - 8 388 607
-reserveX: 1
-reserveY: 0
-totalShares: 1
+```
+Active bin - 8 388 608:
+- reserveX: 1
+- reserveY: 1
+- totalShares: 2
 
-Step1 - swap 2 Y for X
-8 388 608
-reserveX: 0
-reserveY: 2
+Other bin - 8 388 607:
+- reserveX: 1
+- reserveY: 0
+- totalShares: 1
+```
 
-8 388 607
-reserveX: 0
-reserveY: 1
-toatalShares: 1
+**Step 1 - swap 2 Y for X:**
 
-Step2 - swap 3X for Y
-8 388 608
-reserveX: 2
-reserveY: 0
-totalShares: 2
+```
+Bin 8 388 608:
+- reserveX: 0
+- reserveY: 2
 
-8 388 607
-reserveX: 1
-reserveY: 0
-toatalShares: 1
+Bin 8 388 607:
+- reserveX: 0
+- reserveY: 1
+- totalShares: 1
+```
 
-Step3- swap 3Y for X
-8 388 608
-reserveX: 0
-reserveY: 2
-totalShares: 2
+**Step 2 - swap 3X for Y:**
 
-8 388 607
-reserveX: 0
-reserveY: 1
-toatalShares: 1
+```
+Bin 8 388 608:
+- reserveX: 2
+- reserveY: 0
+- totalShares: 2
 
-.
-.
-.
-Just keep repeating swap flow
+Bin 8 388 607:
+- reserveX: 1
+- reserveY: 0
+- totalShares: 1
+```
+
+**Step 3 - swap 3Y for X:**
+
+```
+Bin 8 388 608:
+- reserveX: 0
+- reserveY: 2
+- totalShares: 2
+
+Bin 8 388 607:
+- reserveX: 0
+- reserveY: 1
+- totalShares: 1
+```
+
+**Just keep repeating swap flow...**
 
 Since these swaps are ultra small swaps:
+- No fees are being paid by the user
+- No big capital is needed (unless the user has to manipulate the market to achieve the desired state)
 
-- no fees are being payed by an user
-- no big capital is needed (unless the users has to manipulate the market to achieve the desired state)
+This could also be achieved (manipulating the volatility fee) by traversing through empty bins (which is doable now), but when that gets fixed and also that activeBinList starts being used for traversing, this would still be possible.
 
-This could also be achieved (manipulating the volatility fee) by traversing through empty bins (which is doable now), but when that gets fixed and also that activeBinList start being used for traversing, this would still be possible.
+Also this can be done on an empty market, since once a market is deployed with some binStep, it can't be deployed again (by other user, so users would be forced to use that market).
 
-Also this can be done on an empty market, since once a market is deployed with some binStep, it can't be deployed again (by other user, so users would be force to use that market)
-
-One more thing to note is price difference between bins. When that gets fixed, it would be a bit more complex/difficult, since users should consider the price change (user should likely loose some tokens due to price change), but it wouldn't be major for a stable pair with small binStep.
+One more thing to note is price difference between bins. When that gets fixed, it would be a bit more complex/difficult, since users should consider the price change (user should likely lose some tokens due to price change), but it wouldn't be major for a stable pair with small binStep.
 
 ### Impact
 Volatility fee gets artificially increased, generating more LP fees (or pools can start being unattractive due to high fee)
