@@ -56,7 +56,7 @@ Reports filed via [HackenProof](https://hackenproof.com/).
 |:----|:------|:------:|:----|
 |NEAR Intent Bridge|AuxPoW difficulty target bypass — zero-cost block forgery enables bridge fund theft|Critical|[dogecoin-auxpow-finding](https://github.com/blessingblockchain/dogecoin-auxpow-finding)|
 |NEAR Intent Bridge|`is_refund_required()` treats `PromiseResult::Failed` as success — user BTC deposit absorbed without minting nBTC|Medium-High|[finding-6-is-refund-required-bug](https://github.com/blessingblockchain/finding-6-is-refund-required-bug)|
-|NEAR Intent Bridge|Entropy issue (finding 1)|—|[olas-mpc-finding-1-entropy](https://github.com/blessingblockchain/olas-mpc-finding-1-entropy)|
+|NEAR Intent Bridge|Entropy issue|Medium|[olas-mpc-finding-1-entropy](https://github.com/blessingblockchain/olas-mpc-finding-1-entropy)|
 
 
 ## Private Security reveiws 
