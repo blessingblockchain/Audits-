@@ -31,7 +31,7 @@ And a lot more..
 
 This is a portfolio of my profile on [Cantina](https://cantina.xyz/)
 
-I do contests on different platforms like [code4rena](https://code4rena.com/) and [Cantina](https://www.sherlock.xyz/).
+I do contests on different platforms like [code4rena](https://code4rena.com/) and [Cantina](https://www.sherlock.xyz/), and bug bounty reports via [HackenProof](https://hackenproof.com/).
 
 
 ## Audit Contests
@@ -46,6 +46,17 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |[METROPOLIS]()|Liquidity-Vaults-books| [2 M](Contests/2025-04-Metropolis.md)|10th|
 |[PLUME-NETWORK]()|EVM-compatible-blockchain| [1 C](Contests/2025-10-PlumeNetwork.md)|[X-proof](https://x.com/adeolRxxxx/status/1967670086778724550?s=20)|
 |[VECHAIN-STARGATE]()|Staking-Protocol| [1 C](Contests/2025-11-vechain.md)|[X-proof](https://x.com/adeolRxxxx/status/1998345793397194967?s=20)|
+
+
+## Bug bounties
+
+Reports filed via [HackenProof](https://hackenproof.com/).
+
+|Target|Finding|Severity|Report|
+|:----|:------|:------:|:----|
+|Dogecoin (AuxPoW / bridge)|AuxPoW difficulty target bypass — zero-cost block forgery enables bridge fund theft|Critical|[dogecoin-auxpow-finding](https://github.com/blessingblockchain/dogecoin-auxpow-finding)|
+|nBTC bridge / `safe_mint_callback`|`is_refund_required()` treats `PromiseResult::Failed` as success — user BTC deposit absorbed without minting nBTC|Medium-High|[finding-6-is-refund-required-bug](https://github.com/blessingblockchain/finding-6-is-refund-required-bug)|
+|OLAS (MPC)|Entropy issue (finding 1)|—|[olas-mpc-finding-1-entropy](https://github.com/blessingblockchain/olas-mpc-finding-1-entropy)|
 
 
 ## Private Security reveiws 
