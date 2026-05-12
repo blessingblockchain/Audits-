@@ -45,6 +45,7 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |[METROPOLIS]()|Liquidity-Vaults-books| [2 M](Contests/2025-04-Metropolis.md)|10th|
 |[PLUME-NETWORK]()|EVM-compatible-blockchain| [1 C](Contests/2025-10-PlumeNetwork.md)|[X-proof](https://x.com/adeolRxxxx/status/1967670086778724550?s=20)|
 |[VECHAIN-STARGATE]()|Staking-Protocol| [1 C](Contests/2025-11-vechain.md)|[X-proof](https://x.com/adeolRxxxx/status/1998345793397194967?s=20)|
+|[RESERVE](https://cantina.xyz/competitions/efb6f308-f13b-4110-aff8-0d67181608dd/leaderboard)|Revert Lend — V3Vault lending / daily throttle|[1 M](Contests/2026-03-reserve.md)|4th|
 
 
 ## Private Security reveiws 
