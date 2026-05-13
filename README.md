@@ -92,6 +92,7 @@ All undisclosed engagements can be backed with a reference, in case of interest
 |Protocol|Description|Firm|Findings|
 |:------|:----------|:---|:-------|
 |Spicenet|DeFi brokerage network — cross-chain coordination and settlement; **Spice Flow** (distribution API/SDK) and **Spice Edge** (composable execution across liquidity venues and chains).|Pashov Group|[Security review (PDF)](https://github.com/pashov/audits/blob/master/team/pdf/Spicenet-security-review_2026-04-06.pdf)|
+|LI.FI|Cross-chain intent settlement on Solana — escrowed swap orders, solver competition on destination chains, Wormhole/Polymer oracle settlement.|—|Ongoing|
 |[IGNITE-LABS]()|LB-Pair-AMM-DLMM|—| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|
 |[VENICE]()|Staking-Protocol|—| [1 H, 1 M](Contests/2025-01-Venice.md)|
 |[ASTERA-FINANCE]()|ERC721-based-withdraw-cooldown-mechanism|—| [1 M](Contests/2025-09-astera.md)|
