@@ -89,10 +89,10 @@ All undisclosed engagements can be backed with a reference, in case of interest
 
 ## Private Audit
 
-|Protocol|Description|Firm|Findings|Report|
-|:------|:----------|:---|:-------|:-----|
-|[IGNITE-LABS]()|LB-Pair-AMM-DLMM|—| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|—|
-|[VENICE]()|Staking-Protocol|—| [1 H, 1 M](Contests/2025-01-Venice.md)|—|
-|[ASTERA-FINANCE]()|ERC721-based-withdraw-cooldown-mechanism|—| [1 M](Contests/2025-09-astera.md)|—|
-|[MYSTIC-FINANCE]()|A Liquid Restaking Protocol|—| [3 H, 6 M, 5 L, 1 I](Contests/2025-09-mysticFinance.md)|—|
-|Spicenet|Security review|Pashov Group|—|[Spicenet security review (PDF)](https://github.com/pashov/audits/blob/master/team/pdf/Spicenet-security-review_2026-04-06.pdf)|
+|Protocol|Description|Firm|Findings|
+|:------|:----------|:---|:-------|
+|[IGNITE-LABS]()|LB-Pair-AMM-DLMM|—| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|
+|[VENICE]()|Staking-Protocol|—| [1 H, 1 M](Contests/2025-01-Venice.md)|
+|[ASTERA-FINANCE]()|ERC721-based-withdraw-cooldown-mechanism|—| [1 M](Contests/2025-09-astera.md)|
+|[MYSTIC-FINANCE]()|A Liquid Restaking Protocol|—| [3 H, 6 M, 5 L, 1 I](Contests/2025-09-mysticFinance.md)|
+|Spicenet|Sovereign optimistic rollup (Sovereign SDK): ZK fault proofs (Risc0), Celestia DA, Rome shared sequencing; modular trading stack (Dexterity).|Pashov Group|[Security review (PDF)](https://github.com/pashov/audits/blob/master/team/pdf/Spicenet-security-review_2026-04-06.pdf)|
