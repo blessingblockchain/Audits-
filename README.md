@@ -40,7 +40,7 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |:------|:----------|:-------|:--:|
 |[IGNITE-LABS]()|LB-Pair-AMM-DLMM| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|- |
 |[RESERVE](https://cantina.xyz/competitions/efb6f308-f13b-4110-aff8-0d67181608dd/leaderboard)|Revert Lend — V3Vault lending / daily throttle|[1 M](Contests/2026-03-reserve.md)|4th|
-|[Sui Finance](https://audits.sherlock.xyz/)|Sui Move — lending, rewards, oracles, rate limits|[2 H, 2 M](Contests/2026-03-sui-finance-sherlock.md)|6th|
+|[Sui Finance](https://github.com/sherlock-audit/2026-03-currentsui-contest-march-2026)|Current Finance — Sui Move (lending, rewards, oracles, limits)|[2 H, 2 M](Contests/2026-03-sui-finance-sherlock.md)|6th|
 |[Soon](https://cantina.xyz/competitions/08c2b0b4-8449-4136-82a2-7074ccdfffac/leaderboard)|SVM, layer2, OP Stack|[1 H, 4 L](Contests/2024-12-soon.md)|4th|
 |[RAAC](https://codehawks.cyfrin.io/c/2025-02-raac)|Regnum Aurum Acquisition Corp| [6 H, 8 M, 3 L](Contests/2025-02-Raac.md)|- |
 |[JIGSAW](https://cantina.xyz/code/7a40c849-0b35-4128-b084-d9a83fd533ea/findings/465)|Jigsaw Finance: A CDP-based stablecoin protocol| [1 H](Contests/2025-06-jigsaw.md)|- |
