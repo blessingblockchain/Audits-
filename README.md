@@ -95,4 +95,4 @@ All undisclosed engagements can be backed with a reference, in case of interest
 |[VENICE]()|Staking-Protocol|—| [1 H, 1 M](Contests/2025-01-Venice.md)|
 |[ASTERA-FINANCE]()|ERC721-based-withdraw-cooldown-mechanism|—| [1 M](Contests/2025-09-astera.md)|
 |[MYSTIC-FINANCE]()|A Liquid Restaking Protocol|—| [3 H, 6 M, 5 L, 1 I](Contests/2025-09-mysticFinance.md)|
-|Spicenet|Sovereign optimistic rollup (Sovereign SDK): ZK fault proofs (Risc0), Celestia DA, Rome shared sequencing; modular trading stack (Dexterity).|Pashov Group|[Security review (PDF)](https://github.com/pashov/audits/blob/master/team/pdf/Spicenet-security-review_2026-04-06.pdf)|
+|Spicenet|DeFi brokerage network — cross-chain coordination and settlement; **Spice Flow** (distribution API/SDK) and **Spice Edge** (composable execution across liquidity venues and chains).|Pashov Group|[Security review (PDF)](https://github.com/pashov/audits/blob/master/team/pdf/Spicenet-security-review_2026-04-06.pdf)|
