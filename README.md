@@ -39,7 +39,7 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 |Contest|Description|Findings|Rank|
 |:------|:----------|:-------|:--:|
 |[XRP LEDGER](https://github.com/sherlock-audit/2026-04-xrp-ledger-april-2026)|XRPL — AMM, MPT, Vaults, Lending, Delegation|[2 H, 3 M](Contests/2026-04-xrp-ledger.md)|6th|
-|[SOLANA]()|Solana|—|3rd|
+|[RAINDROPS]()|Solana|private contest|3rd|
 |[IGNITE-LABS]()|LB-Pair-AMM-DLMM| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|- |
 |[RESERVE](https://cantina.xyz/competitions/efb6f308-f13b-4110-aff8-0d67181608dd/leaderboard)|Revert Lend — V3Vault lending / daily throttle|[1 M](Contests/2026-03-reserve.md)|4th|
 |[Sui Finance](https://github.com/sherlock-audit/2026-03-currentsui-contest-march-2026)|Current Finance — Sui Move (lending, rewards, oracles, limits)|[2 H, 2 M](Contests/2026-03-sui-finance-sherlock.md)|6th|
