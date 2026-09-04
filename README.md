@@ -38,6 +38,8 @@ I do contests on different platforms like [code4rena](https://code4rena.com/) an
 
 |Contest|Description|Findings|Rank|
 |:------|:----------|:-------|:--:|
+|[XRP LEDGER](https://github.com/sherlock-audit/2026-04-xrp-ledger-april-2026)|XRPL — AMM, MPT, Vaults, Lending, Delegation|[2 H, 3 M](Contests/2026-04-xrp-ledger.md)|6th|
+|[SOLANA]()|Solana|—|3rd|
 |[IGNITE-LABS]()|LB-Pair-AMM-DLMM| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|- |
 |[RESERVE](https://cantina.xyz/competitions/efb6f308-f13b-4110-aff8-0d67181608dd/leaderboard)|Revert Lend — V3Vault lending / daily throttle|[1 M](Contests/2026-03-reserve.md)|4th|
 |[Sui Finance](https://github.com/sherlock-audit/2026-03-currentsui-contest-march-2026)|Current Finance — Sui Move (lending, rewards, oracles, limits)|[2 H, 2 M](Contests/2026-03-sui-finance-sherlock.md)|6th|
@@ -93,7 +95,9 @@ All undisclosed engagements can be backed with a reference, in case of interest
 |Protocol|Description|Firm|Findings|
 |:------|:----------|:---|:-------|
 |Spicenet|DeFi brokerage network — cross-chain coordination and settlement; **Spice Flow** (distribution API/SDK) and **Spice Edge** (composable execution across liquidity venues and chains).|Pashov Group|[Security review (PDF)](https://github.com/pashov/audits/blob/master/team/pdf/Spicenet-security-review_2026-04-06.pdf)|
-|LI.FI|Cross-chain intent settlement on Solana — escrowed swap orders, solver competition on destination chains, Wormhole/Polymer oracle settlement.|Pashov Group|Ongoing|
+|LI.FI|Cross-chain intent settlement on Solana — escrowed swap orders, solver competition on destination chains, Wormhole/Polymer oracle settlement.|Pashov Group|Completed|
+|[BIO](https://github.com/PashovAuditGroup/Bio_March26_MERGED)|Bio Protocol — DeSci launchpad / agent-token launches (Pancake V3, Aerodrome, vesting, BYOT).|Pashov Group|[4 H, 7 M, 4 L](Contests/2026-03-bio.md)|
+|Mentat Minds|Bittensor-native lending (Mentat Lend) — TAO / subnet-token collateral, oracles, and liquidation.|BurraSec|Private|
 |[IGNITE-LABS]()|LB-Pair-AMM-DLMM|—| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|
 |[VENICE]()|Staking-Protocol|—| [1 H, 1 M](Contests/2025-01-Venice.md)|
 |[ASTERA-FINANCE]()|ERC721-based-withdraw-cooldown-mechanism|—| [1 M](Contests/2025-09-astera.md)|
