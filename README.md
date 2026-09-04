@@ -98,7 +98,7 @@ All undisclosed engagements can be backed with a reference, in case of interest
 |Spicenet|DeFi brokerage network — cross-chain coordination and settlement; **Spice Flow** (distribution API/SDK) and **Spice Edge** (composable execution across liquidity venues and chains).|Pashov Group|[Security review (PDF)](https://github.com/pashov/audits/blob/master/team/pdf/Spicenet-security-review_2026-04-06.pdf)|
 |LI.FI|Cross-chain intent settlement on Solana — escrowed swap orders, solver competition on destination chains, Wormhole/Polymer oracle settlement.|Pashov Group|Completed|
 |[BIO]()|Bio Protocol — DeSci launchpad / agent-token launches (Pancake V3, Aerodrome, vesting, BYOT).|Pashov Group|[5 H, 8 M, 7 L](Contests/2026-03-bio.md)|
-|Mentat Minds|Bittensor-native lending (Mentat Lend) — TAO / subnet-token collateral, oracles, and liquidation.|BurraSec|Private|
+|[MENTAT MINDS]()|Bittensor-native lending (Mentat Lend) — TAO / subnet-token collateral, dual-EMA oracles, and liquidation.|BurraSec|[5 M, 9 L, 8 I](Contests/2026-07-mentat-minds.md)|
 |Valsec|-|Valsec Security|Private|
 |[OXLEY]()|Oxley Core and Roundtable V2 — launch hooks, V4 pools, seats, and volume rewards on Robinhood Chain.|—|[3 H, 3 M, 1 L](Contests/2026-oxley.md)|
 |[IGNITE-LABS]()|LB-Pair-AMM-DLMM|—| [3 C, 3 H, 7 M, 5 L](Contests/2025-12-IgniteLabs.md)|
