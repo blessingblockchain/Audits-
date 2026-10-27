@@ -1,18 +1,30 @@
-Bug Report, TOS Network
-To: the TOS Network maintainers (private disclosure per the repository SECURITY.md; placeholder address, I send this separately) Subject: Critical. One unauthenticated overlay peer permanently kills any syncing TOS node, demonstrated live end to end: a real node downloaded a hostile state file over the real overlay (sha256 verified byte for byte on the wire), its unmodified streaming importer allocated a single 1,814.8 MiB scratch against the 256 MiB design cap (7.1× over) and the node's process died, leaving a 13 attempt, 1 Hz kill loop in its log. The import path allocates its read scratch to a peer controlled length, up to the 16 GiB state file cap, before validating the cell, bypassing max_resident_bytes entirely; the failure handler retries every 1.0 second unconditionally, so one malicious peer re kills the node every second for as long as it keeps answering.
+# TOS Network — One overlay peer OOMs any syncing node and pins it in a 1 Hz kill loop
 
-Program. TOS Network pre mainnet bounty (repository SECURITY.md scope; GitHub issue #33 thread). Affected repository. github.com/tosnetwork/tos Affected commit. 442884a, HEAD at the time of reporting. Affected versions. The streaming persistent state import shipped in commit 98fe085 (2026-04-28, "validator: tos26 P1-4, actor local persistent state streaming import") with hardening follow ups 423e842/ef76079/dc44f11 the same day, so every build from 2026-04-28 through current HEAD carries the bypass, including the file size budget hardening (state-download-buffer.h:317, max_single_file_bytes = 16 GiB), which is exactly the ceiling my attack scales to. In scope area. Lite server/ADNL/RLDP networking and node liveness (bounty scope: networking; the victim is the validator/full node state sync path). Reporter test environment. macOS arm64, node built from 442884a; the PoC drives the repository's own std_boc_deserialize_from_file_bounded, the exact function the node's run_streaming_import_worker calls on every downloaded persistent state (celldb.cpp:2296-2341), with the node's default options. No live mainnet or testnet exists (all rpc hostnames under tos.network NXDOMAIN as of 2026-10-12); the proof runs against the network's own import code at the affected commit.
+> Private disclosure to the TOS Network maintainers per the repository `SECURITY.md`.
 
-1. Title
+**Severity:** Critical  
+**Program:** TOS Network pre-mainnet bug bounty (`SECURITY.md` scope; GitHub issue #33)  
+**Affected repository:** [`tosnetwork/tos`](https://github.com/tosnetwork/tos)  
+**Affected commit:** `442884a` (HEAD at the time of reporting)  
+**Affected versions:** `98fe085` (2026-04-28) through current HEAD  
+**Scope:** Lite server / ADNL / RLDP networking and node liveness; validator/full-node state sync  
+**Test environment:** macOS arm64; node built from `442884a`; the PoC drives the repository's own `std_boc_deserialize_from_file_bounded` with the node's default options; no mainnet or testnet exists (RPC hostnames under `tos.network` NXDOMAIN as of 2026-10-12)
+
+## Summary
+
 A single unauthenticated peer OOMs any syncing node and pins it in a 1 Hz download death loop, because the streaming BoC importer sizes its scratch buffer from the attacker's own index table before validating the cell, and the "bounded memory" design cap is enforced on a different allocation.
 
-2. Description
-Brief
+## Description
+
+### Brief
+
 The streaming importer exists so a node can import a multi gigabyte persistent state from a peer without holding it in memory: a max_resident_bytes budget of 256 MiB (default) is enforced "fail closed" on the cells, and the file reader buffers reads in a scratch buffer that is documented as bounded. I verified line by line that the bound is not what the code believes: StreamingFileReader::read (crypto/vm/boc.cpp:1119-1138) grows its scratch to any requested length in a single allocation, with an in code comment claiming growth is "bounded by the per cell size limit imposed elsewhere in the caller." No such limit exists upstream of the read: the cell build loop (boc.cpp:1734-1742) validates only cell_offset <= cell_end <= data_size and cell_len >= 2, then calls reader.read(...) with the attacker chosen span; the descriptor check (cs_info.init) runs after the allocation and full read. A crafted state file with one index entry spanning ~2 GiB passes every declared bound, monotonic offsets, last entry equals data_size, max_total_cell_bytes (16 GiB), scaffolding budget, and forces one ~2 GiB allocation. I demonstrated it against the real importer with the node's default options: RSS delta 1,868.3 MiB against the 256 MiB cap (7.3×), scaling linearly to the 16 GiB file ceiling since a sparse file costs the attacker ~1/80th of its logical size on disk. The node makes this a permanent kill: DownloadShardState::fail_handler (validator/net/download-state.cpp:1789-1793) retries the whole download unconditionally every 1.0 second, including on exactly this kind of parse failure, so one peer answering state requests at 1 Hz keeps the victim in a download die restart loop indefinitely.
 
-Vulnerability details
+### Vulnerability details
+
 The unbounded growth, crypto/vm/boc.cpp:1119-1138:
 
+```cpp
 if (len > chunk_bytes_) {
   // Caller asked for more than our scratch size; grow the scratch
   // buffer to fit this request. The growth is a single allocation
@@ -21,45 +33,68 @@ if (len > chunk_bytes_) {
   // the scratch arbitrarily.          <-- the "elsewhere" limit does not exist
   chunk_bytes_ = len;
   scratch_ = td::BufferSlice{};  // force a re-fill below
+```
+
 The caller, crypto/vm/boc.cpp:1734-1748, note the order: read first, validate after:
 
+```cpp
 std::size_t cell_len = static_cast<std::size_t>(cell_end - cell_offset);
 if (cell_len < 2) { /* reject */ }
 TRY_RESULT(cell_slice, reader.read(info.data_offset + cell_offset, cell_len));   // <-- allocation
 CellSerializationInfo cs_info;
 auto status = cs_info.init(cell_slice, info.ref_byte_size);                       // <-- validation
+```
+
 Meanwhile the max_resident_bytes tracker (boc.cpp:1710-1717) charges only per cell serialized sizes entering the residency window, the scratch allocation is invisible to it. The state file ceiling is generous: max_single_file_bytes = 16ULL << 30 (state-download-buffer.h:317), and the importer's own max_total_cell_bytes default is the same 16 GiB (boc.h:465), so a compliant crafted file can legally demand a 16 GiB scratch. The retry loop that turns one kill into a pinned liveness denial: validator/net/download-state.cpp:1789-1793.
 
-Prior art and what this report claims
+### Prior art
+
 I checked what the team already knows and state it plainly. This importer is TOS's own code, and the team has actively hardened it: commits 423e842/ef76079/dc44f11 (2026-04-28) added import recovery and a GC interlock, 1050f00 (2026-09-22) made the "streaming importer scaling gate deterministic," and the memory budget file (state-download-buffer.*) exists specifically to bound importer memory, the team's design goal is exactly the guarantee this bug voids. Commit 1050f00's hardening tightened when scaling happens, not what bounds a single read; pr-153's twelve finding hardening pass and the Round 160 last entry fix (present in boc.cpp:1738-1745, which I defeat cleanly) both predate or miss the scratch path. What no commit, comment or test acknowledges is that the scratch growth, the one allocation that scales with attacker input rather than with honest state size, is unbounded, validated after allocate, and invisible to the resident byte budget. I claim: an unauthenticated remote memory exhaustion kill of any syncing node, with a built in 1 Hz permanent retry amplifier, demonstrated on the real importer at the affected commit.
 
-Impact details
+## Impact
+
 Maximized, layer by layer:
 
-The kill. A syncing node's RSS spikes by up to 16 GiB in one allocation (file ceiling), on production validator hardware (16 to 64 GiB RAM) this is a guaranteed OOM kill or unrecoverable thrash. Trigger cost: one overlay connection. No stake, no keys, no governance, no race.
-The pin. The 1.0 s unconditional retry means the kill is not one shot: while the attacker answers, the node loops download→parse→die forever. The node cannot sync, cannot rejoin, and the loop survives operator restarts (it re syncs on boot).
-The asymmetry. The crafted file is sparse: my 2.0 GiB logical file occupies 26 MB on disk (linear: 16 GiB ≈ 200 MB). The attacker pays wire bandwidth for bytes the victim requests; the victim pays process death. One modest server can serve every victim concurrently, each downloader allocates independently.
-The launch window. Every node that ever joins TOS must state sync at bootstrap; validators re sync on persistent state rotation; liteservers and explorers sync shards continuously. At mainnet launch the entire network is in the victim state simultaneously. A single actor can freeze network growth fleet wide, no stake slashed, no evidence beyond ordinary looking download failures, and the failures are indistinguishable from network flakiness in logs (WARNING: failed to download state, every second).
-Compounding. This stacks with every other liveness finding: a validator wedged by any consensus bug eventually restarts, and a restart must re sync, the attacker owns the re sync. The 16 GB spool writes between allocations also churn disk (the pre verification spool cost is paid before the parse that kills).
-Trust erosion. The in code comment asserts the exact bound that doesn't exist; the fail closed resident budget is real but guards the wrong allocation. Any audit relying on the code's own memory boundary claims inherits the false premise.
+- The kill. A syncing node's RSS spikes by up to 16 GiB in one allocation (file ceiling), on production validator hardware (16 to 64 GiB RAM) this is a guaranteed OOM kill or unrecoverable thrash. Trigger cost: one overlay connection. No stake, no keys, no governance, no race.
+- The pin. The 1.0 s unconditional retry means the kill is not one shot: while the attacker answers, the node loops download→parse→die forever. The node cannot sync, cannot rejoin, and the loop survives operator restarts (it re syncs on boot).
+- The asymmetry. The crafted file is sparse: my 2.0 GiB logical file occupies 26 MB on disk (linear: 16 GiB ≈ 200 MB). The attacker pays wire bandwidth for bytes the victim requests; the victim pays process death. One modest server can serve every victim concurrently, each downloader allocates independently.
+- The launch window. Every node that ever joins TOS must state sync at bootstrap; validators re sync on persistent state rotation; liteservers and explorers sync shards continuously. At mainnet launch the entire network is in the victim state simultaneously. A single actor can freeze network growth fleet wide, no stake slashed, no evidence beyond ordinary looking download failures, and the failures are indistinguishable from network flakiness in logs (WARNING: failed to download state, every second).
+- Compounding. This stacks with every other liveness finding: a validator wedged by any consensus bug eventually restarts, and a restart must re sync, the attacker owns the re sync. The 16 GB spool writes between allocations also churn disk (the pre verification spool cost is paid before the parse that kills).
+- Trust erosion. The in code comment asserts the exact bound that doesn't exist; the fail closed resident budget is real but guards the wrong allocation. Any audit relying on the code's own memory boundary claims inherits the false premise.
+
 What this finding does not claim: no fund theft, no consensus split, no private key exposure, this is availability, but availability of the sync path, which is the whole network during launch.
 
-References
-The unbounded growth and its false comment. https://github.com/tosnetwork/tos/blob/442884a/crypto/vm/boc.cpp (lines 1119-1138) Read before validate in the cell loop. https://github.com/tosnetwork/tos/blob/442884a/crypto/vm/boc.cpp (lines 1734-1748) The 16 GiB file/import ceilings. validator/state-download-buffer.h:317, crypto/vm/boc.h:465 The 1 Hz unconditional retry. https://github.com/tosnetwork/tos/blob/442884a/validator/net/download state.cpp (lines 1789-1793) The importer's introduction. https://github.com/tosnetwork/tos/commit/98fe085
+## References
 
-3. Proof of Concept
+- The unbounded growth and its false comment: [`boc.cpp`](https://github.com/tosnetwork/tos/blob/442884a/crypto/vm/boc.cpp) (lines 1119-1138)
+- Read-before-validate in the cell loop: [`boc.cpp`](https://github.com/tosnetwork/tos/blob/442884a/crypto/vm/boc.cpp) (lines 1734-1748)
+- The 16 GiB file/import ceilings: `validator/state-download-buffer.h:317`, `crypto/vm/boc.h:465`
+- The 1 Hz unconditional retry: [`download-state.cpp`](https://github.com/tosnetwork/tos/blob/442884a/validator/net/download-state.cpp) (lines 1789-1793)
+- The importer's introduction: [`98fe085`](https://github.com/tosnetwork/tos/commit/98fe085)
+
+## Proof of Concept
+
 The PoC drives the repository's own std_boc_deserialize_from_file_bounded, the identical call the node's run_streaming_import_worker makes on every downloaded persistent state, with default options (max_resident_bytes = 256 MiB), on a crafted header valid BoC whose index declares one ~2 GiB cell. The file is sparse: 2.01 GB logical, 26 MB on disk. All gates measured with getrusage peak RSS around the real importer call.
 
-The full gated run (verbatim)
+### Full gated run (verbatim)
+
+#### Stage 1 — Importer level
+
 Stage 1, importer level (function under the node's exact options):
 
+```text
 [poc] crafted /tmp/evil.boc: logical 2159186520 bytes, on-disk 25997312 bytes (sparse)
 [poc] RSS before: 26.8 MiB | peak after: 1895.1 MiB | delta: 1868.3 MiB
 [poc] importer result: ERROR (as expected, AFTER the allocation): [Error : 0 :
       std_boc_deserialize_from_file_bounded: cell #0 has unused trailing bytes]
 [poc] VERDICT: BYPASS REPRODUCED — single allocation of 1.82 GB vs 256 MiB cap (7.3x over)
+```
+
+#### Stage 2 — Live end-to-end
+
 Stage 2, LIVE end to end on a real node network (rig: poc/poc_f_a5_7_e2e.py): three real nodes, A (initial validator, produced the chain), B (fresh victim full node, unmodified binary), plus a governance driven key block so the attacker knows the deterministic serve filename state_<K>_-1_8000000000000000_<hash> (hash algorithm verified against A's own live zerostate filename). The attacker plants evil.boc in its own archive/states/ and restarts; the serve path has no content hash gate; B (default budgets, --sync-before 30) state syncs from A.
 
+```text
 G1  PASS — B log: "downloading state (-1,8000000000000000,181):DF2ECECD…"   (real overlay download started)
 G2  PASS — spool pre-sized 2,159,186,520 B; sha256(spool on B) == sha256(evil.boc)  (byte-for-byte on the wire)
 G3  PASS — B RSS 23 → 1837 MiB (delta 1814.8 MiB = 7.1x the 256 MiB cap), sampled 762 times,
@@ -69,12 +104,17 @@ G3  PASS — B RSS 23 → 1837 MiB (delta 1814.8 MiB = 7.1x the 256 MiB cap), sa
 G4  PASS — control: identical format, 1 MiB gap, same serve path: 24 ms download,
             B2 RSS delta 30 MiB, expected parse rejection, B2 alive
 Verdict: E2E BYPASS REPRODUCED — real node process pulled the attacker's crafted bytes through the real overlay into the real streaming importer. Victim binary 100% unmodified; the only attacker side work is planting a file in its own node's state directory and restarting it. Preserved evidence: spool residue poc/work-fa57/net/node2/tmp/persistent-state/(-1,8000000000000000,181).34524040960 (2,159,186,520 B, sha matched, kept by the process death), victim logs poc/work-fa57/net/node2|node3/log, transcript /tmp/fa57_e2e.log, gates poc/work-fa57/gates.json.
+```
 
 Stage 1 gates: G1 crafted file passes every declared importer bound, pass. G2 the 2 GiB single scratch allocation occurs, pass, RSS delta 1,868.3 MiB. G3 the allocation precedes validation, pass. G4 the 256 MiB resident cap never engages, pass, 7.3× over. G5 scaling to the node ceiling, structural: linear in the index gap, 16 GiB ceiling ≈ 200 MB sparse disk. G6 node level amplification, now EXECUTED (stage 2): real node death + 1 Hz kill loop.
 
-The tool, full source
+### Tool — full source
+
+#### Stage 1 — Importer harness
+
 Stage 1, importer level harness (poc_f_a5_7.cpp, compile against the repo's own build tree, full source, paste and run):
 
+```cpp
 // PoC F-A5-7: streaming BoC importer scratch-growth bypass of max_resident_bytes.
 // Crafts a header-valid BoC whose single "cell #0" spans ~2 GiB of a sparse file,
 // feeds the REAL std_boc_deserialize_from_file_bounded (opts.max_resident_bytes = 256 MiB),
@@ -198,8 +238,11 @@ int main(int argc, char** argv) {
          (after - before) / 1073741824.0, over);
   return 0;
 }
+```
+
 Compile (from the repository root, after a standard build):
 
+```bash
 ABSEIL=$(find build/third-party/abseil-cpp -name '*.a' | tr '\n' ' ') && \
 clang++ -std=c++20 -O1 -arch arm64 -I . -I crypto -I crypto/vm -I tdutils -I tdactor -I tddb \
   -I build/tdutils -I third-party/abseil-cpp poc_f_a5_7.cpp \
@@ -209,8 +252,13 @@ clang++ -std=c++20 -O1 -arch arm64 -I . -I crypto -I crypto/vm -I tdutils -I tda
   build/third-party/lz4/lib/liblz4.a build/third-party/crc32c/libcrc32c.a -lz $ABSEIL \
   -framework CoreFoundation -framework Foundation -o poc_f_a5_7
 ./poc_f_a5_7 /tmp/evil.boc
+```
+
+#### Stage 2 — Live three-node rig
+
 Stage 2, LIVE three node rig (poc_f_a5_7_e2e.py, full source, paste and run; venv at tos/test/tostester/.venv, binaries from the repository build):
 
+```python
 #!/usr/bin/env python3
 """PoC F-A5-7 END-TO-END: streaming state-importer RAM bypass on a live tostester network.
 
@@ -804,7 +852,14 @@ def dead_check(rss: RssPoller) -> bool:
     return rss.pid is not None and rss.gone >= 10
 
 asyncio.run(main())
-Run: cd tos/test/tostester && .venv/bin/python ../../poc/poc_f_a5_7_e2e.py (expects the repository binaries under tos/build; the rig boots its own DHT + validator + victim network on local ports).
+```
 
-Fix suggestion
+Run (expects the repository binaries under `tos/build`; the rig boots its own DHT, validator and victim network on local ports):
+
+```bash
+cd tos/test/tostester && .venv/bin/python ../../poc/poc_f_a5_7_e2e.py
+```
+
+## Fix suggestion
+
 Enforce the per cell bound before the allocation, where the comment already believes it lives: (1) read the 2 byte descriptor first, compute end_offset from CellSerializationInfo semantics, and reject any cell whose serialized span exceeds the true serialization ceiling (data ≤ ~1 KB + refs/hashes ≈ a few KB, a fixed constant) before calling reader.read with the full span; (2) hard cap StreamingFileReader::read growth at min(requested, opts.max_resident_bytes) and fail closed beyond it; (3) charge the scratch against the same resident budget as cells; and (4) make DownloadShardState::fail_handler distinguish permanent parse failures (bad file = bad peer, blacklist and pick another source) from transient transport errors before keeping the 1 Hz retry, the retry loop converts every parser bug of this class into a sustained liveness attack. The same audit should sweep every other reader.read call site for attacker controlled lengths (boc.cpp:1654 is the sibling the streaming importer also hits).
