@@ -65,6 +65,11 @@ Reports filed via [HackenProof](https://hackenproof.com/) and other bug bounty p
 |NEAR Intent Bridge|Entropy issue|Medium|[olas-mpc-finding-1-entropy](https://github.com/blessingblockchain/olas-mpc-finding-1-entropy)|
 |Chainflip|BTC change-UTXO poison — a previous-epoch vault output is recorded as a current-key change UTXO; the next egress batch is unminable and the BTC leg halts network-wide|High|[F1 writeup](Bug-Bounties/chainflip/F1-BTC-change-utxo-poison.md)|
 |Chainflip|BHW vote-payload OOM — unbounded headers and payload-blind weight exhaust the 128 MiB wasm heap in `on_finalize`; one vote halts block production network-wide|Critical|[F2 writeup](Bug-Bounties/chainflip/F2-BHW-vote-payload-OOM.md)|
+|Bitcoin ABC (eCash)|Stale `m_recent_rejects` filter lets an unprivileged peer force a zero-confirmation avalanche double spend|High|[writeup](Bug-Bounties/bitcoin-abc/DISCLOSURE_avalanche_stale_rejects_doublespend.md)|
+|Bitcoin ABC (eCash)|Staking reward age gate bypass pays a gated proof and splits honest nodes|High|[writeup](Bug-Bounties/bitcoin-abc/DISCLOSURE_avalanche_staking_reward_age_gate.md)|
+|Bitcoin ABC (eCash)|Avalanche preconsensus finality is reversible once the transaction is mined|Critical|[writeup](Bug-Bounties/bitcoin-abc/DISCLOSURE_preconsensus_finality_reorg.md)|
+
+The three Bitcoin ABC reports were acknowledged by the Bitcoin ABC security team, and bounties were paid.
 
 
 ## Private Security reveiws 
