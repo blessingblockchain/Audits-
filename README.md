@@ -13,8 +13,10 @@ I am a smart contract auditor with experience across major web3 security platfor
 
 ## Languages
 - Solidity
-- Rust 
-- Golang 
+- Rust
+- Golang
+- C++
+- Move
 
 ## Expertise 
 I've audited projects in the following categories:
@@ -61,6 +63,13 @@ Reports filed via [HackenProof](https://hackenproof.com/).
 |NEAR Intent Bridge|AuxPoW difficulty target bypass — zero-cost block forgery enables bridge fund theft|Critical|[dogecoin-auxpow-finding](https://github.com/blessingblockchain/dogecoin-auxpow-finding)|
 |NEAR Intent Bridge|`is_refund_required()` treats `PromiseResult::Failed` as success — user BTC deposit absorbed without minting nBTC|Medium|[finding-6-is-refund-required-bug](https://github.com/blessingblockchain/finding-6-is-refund-required-bug)|
 |NEAR Intent Bridge|Entropy issue|Medium|[olas-mpc-finding-1-entropy](https://github.com/blessingblockchain/olas-mpc-finding-1-entropy)|
+
+### Bug bounty writeups
+
+|Target|Finding|Severity|Report|
+|:----|:------|:------:|:----|
+|Chainflip|BTC change-UTXO poison — a previous-epoch vault output is recorded as a current-key change UTXO; the next egress batch is unminable and the BTC leg halts network-wide|High|[F1 writeup](Bug-Bounties/chainflip/F1-BTC-change-utxo-poison.md)|
+|Chainflip|BHW vote-payload OOM — unbounded headers and payload-blind weight exhaust the 128 MiB wasm heap in `on_finalize`; one vote halts block production network-wide|Critical|[F2 writeup](Bug-Bounties/chainflip/F2-BHW-vote-payload-OOM.md)|
 
 
 ## Private Security reveiws 
