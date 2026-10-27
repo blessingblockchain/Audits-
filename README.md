@@ -68,8 +68,10 @@ Reports filed via [HackenProof](https://hackenproof.com/) and other bug bounty p
 |Bitcoin ABC (eCash)|Stale `m_recent_rejects` filter lets an unprivileged peer force a zero-confirmation avalanche double spend|High|[writeup](Bug-Bounties/bitcoin-abc/DISCLOSURE_avalanche_stale_rejects_doublespend.md)|
 |Bitcoin ABC (eCash)|Staking reward age gate bypass pays a gated proof and splits honest nodes|High|[writeup](Bug-Bounties/bitcoin-abc/DISCLOSURE_avalanche_staking_reward_age_gate.md)|
 |Bitcoin ABC (eCash)|Avalanche preconsensus finality is reversible once the transaction is mined|Critical|[writeup](Bug-Bounties/bitcoin-abc/DISCLOSURE_preconsensus_finality_reorg.md)|
+|TOS Network|Weak controller key accepted on the legacy agent-account spend path — anyone can drain the account with a keyless Ed25519 forgery (R = identity, S = 0)|Critical|[writeup](Bug-Bounties/tos-network/tos-weak-key-agent-account-drain.md)|
+|TOS Network|Streaming state importer allocates attacker-controlled scratch before validating the cell — one overlay peer OOMs any syncing node and pins it in a 1 Hz retry loop|Critical|[writeup](Bug-Bounties/tos-network/tos-streaming-state-import-ram-bypass.md)|
 
-The three Bitcoin ABC reports were acknowledged by the Bitcoin ABC security team, and bounties were paid.
+The three Bitcoin ABC reports were acknowledged by the Bitcoin ABC security team, and bounties were paid. The two TOS Network reports were acknowledged by the TOS Network team.
 
 
 ## Private Security reveiws 
