@@ -1,18 +1,30 @@
-Bug Report, TOS Network
-To: the TOS Network maintainers (private disclosure per the repository SECURITY.md; placeholder address, I send this separately) Subject: Critical. Agent accounts deployed outside the Rust SDK carry an unverified controller key: nothing on the contract's legacy operation path checks the stored pubkey for forgeability, so an account whose StateInit carries the identity alias key 0x0100…0080 is drained by anyone, with a forged signature (R = identity, S = 0) that needs no key material at all. Proven end to end on a local devnet: the forged native_send was accepted and 9,000,000,000 nanoTOS, the victim's entire funded balance, landed on the attacker's wallet, while the identical forgery against a strong key control was rejected and the guarded checked_contract_call_v2 path refuses with 1720 weak_controller.
+# TOS Network — Keyless drain of agent accounts with a forgeable controller key
 
-Program. TOS Network pre mainnet bounty (repository SECURITY.md scope; GitHub issue #33 thread). Affected repository. github.com/tosnetwork/tos Affected commit. 442884a, HEAD at the time of reporting. Affected versions. The agent account contract shipped in commit 7b47327 (2026-07-19, "Add native agent account contract template"); the Rust SDK client got a key strength check the same day (fe17a57, validate_controller_public_key), and commit 77f1558 (2026-10-04, "Refuse forgeable authority keys and bind signed statements to the network") added the shared contract side guard, but wired it only onto the new checked_contract_call_v2 path and onto rotation of the NEW key. Every release from 7b47327 through current HEAD drains on the legacy path. In scope area. AI Actor security, agent account ownership, delegation, recovery, and spending policies, per the repository SECURITY.md scope list. Reporter test environment. macOS arm64, local devnet built with the repository's own tostester harness and node binaries compiled from 442884a; the victim contract was compiled from the repository's own agent-account-code.fc with the repository's own func binary and asserted byte identical to the Rust SDK's pinned artifact hash. No live mainnet or testnet exists (all rpc hostnames under tos.network NXDOMAIN as of 2026-10-12), so the proof runs against the network's own tooling at the affected commit.
+> Private disclosure to the TOS Network maintainers per the repository `SECURITY.md`.
 
-1. Title
-Anyone can drain any agent account whose stored controller key is a forgeable Ed25519 encoding, because the contract's legacy spending operations (task_send, native_send, deploy_send, cancel) verify the signature against the stored key but never check that the stored key is not a forgery shortcut, and the guard that exists (require_strong_controller_key) is called on only one of the five spend paths.
+**Severity:** Critical  
+**Program:** TOS Network pre-mainnet bug bounty (`SECURITY.md` scope; GitHub issue #33)  
+**Affected repository:** [`tosnetwork/tos`](https://github.com/tosnetwork/tos)  
+**Affected commit:** `442884a` (HEAD at the time of reporting)  
+**Affected versions:** `7b47327` through current HEAD  
+**Scope:** AI Actor security — agent account ownership, delegation, recovery, and spending policies  
+**Test environment:** macOS arm64; local devnet built with the repository's own `tostester` harness and node binaries compiled from `442884a`; no mainnet or testnet exists (RPC hostnames under `tos.network` NXDOMAIN as of 2026-10-12)
 
-2. Description
-Brief
+## Summary
+
+Anyone can drain any agent account whose stored controller key is a forgeable Ed25519 encoding, because the contract's legacy spending operations (`task_send`, `native_send`, `deploy_send`, `cancel`) verify the signature against the stored key but never check that the stored key is not a forgery shortcut, and the guard that exists (`require_strong_controller_key`) is called on only one of the five spend paths.
+
+## Description
+
+### Brief
+
 Ed25519 verification accepts signatures over so called "weak" encoded points, the identity element 0x0100…0080, small order torsion points, and non canonical y encodings ≥ the field modulus. For these keys, signatures can be forged with no knowledge of any secret: choose R equal to the public key itself (or a small order point) and S = 0, and the verification equation holds. TOS knows this: the repository ships crypto/smartcont/strong-ed25519-key.fc, whose whole purpose is to refuse such keys, and its own CI (test/weak-ed25519/test_native_aliases.py) machine verifies that the identity alias verifies under CHKSIGNU. The Rust SDK refuses weak keys client side (validate_controller_public_key, tosctl/src/node-control/contracts/src/agent_account.rs:473-501). But the on chain contract applies none of this to the stored controller key on its legacy spending path: agent-account-code.fc:533-535 calls require_strong_controller_key only inside checked_contract_call_v2, rotation (:475) checks only the new key, and task_send/native_send/deploy_send/cancel go straight to check_signature (:549). I deployed an agent account via a hand built StateInit carrying the identity alias key, bypassing the SDK, as any non Rust integrator, cross chain agent, or contract relative tooling does, funded it with 10 TOS, and drained 9,000,000,000 nanoTOS of it to an attacker wallet with a forged signature computed in plain Python (R = identity, S = 0). The control account, identical in every way except a random strong controller key, rejected the identical forgery with bad_signature. The guarded checked_contract_call_v2 path refuses the same forgery with exit 1720 weak_controller, proving the guard exists in the contract and is simply not wired onto the legacy path. Victims are enumerable: the weak pubkey is readable from the account's public state data (get_controller_pubkey / raw data parse).
 
-Vulnerability details
+### Vulnerability details
+
 The guard and its single call site, crypto/smartcont/agent-account-code.fc:
 
+```func
 ;; line 533-535 — the ONLY place the STORED key is strength-checked
 int require_strong_controller_key? = ... require_strong_controller_key(stored_pubkey) ...
     ;; but this lives inside checked_contract_call_v2 only
@@ -22,35 +34,61 @@ throw_unless(err::invalid_signature, require_strong_controller_key(new_key));
 
 ;; line 549 — legacy task_send / native_send / deploy_send: straight to signature check
 throw_unless(err::invalid_signature, check_signature(stored_pubkey, signature, msg_hash));
+```
+
 check_signature lowers to TVM CHKSIGNU, which accepts weak encodings, the repository's own test/weak-ed25519/test_native_aliases.py asserts the identity alias verifies, and strong-ed25519-key.fc exists precisely because raw CHKSIGNU cannot distinguish them. The forge for the identity alias is R = I (the identity encoding itself), S = 0, over the message hash, a fixed 64 byte blob independent of key material. Daily limit semantics bound the per day theft to the account's daily_limit (mine: 10 TOS deploy time policy, since the attacker also controls the StateInit that sets it), and ttl/epoch fields are attacker chosen at deploy.
 
 Deployment surfaces that skip the SDK guard: any direct BOC tooling, wallets built on other languages, agent to agent contract relative deployment (the AI actor workflow the contract exists for), and any pre existing account whose key was generated by a buggy generator, all produce accounts whose stored key was never strength checked anywhere.
 
-Prior art and what this report claims
+### Prior art
+
 I checked what the team already knows and state it plainly. The team's own commit 77f1558 (2026-10-04) is titled "Refuse forgeable authority keys and bind signed statements to the network" and introduced both strong-ed25519-key.fc and the checked_contract_call_v2 path that calls it, establishing that forgeable authority keys are an active security goal of this team. The Rust SDK's validate_controller_public_key (fe17a57, same day as the contract, 2026-07-19) documents the exact threat in its comment: "ed25519-dalek keeps some historical decoding permissiveness in from_bytes". What no commit, test, comment or changelog entry acknowledges is that the legacy operation path, the one every deployment predating 77f1558 uses and every non SDK deployment uses today, never applies the guard to the stored key, leaving those accounts forgeable. I claim: an unauthenticated, keyless, repeatable drain of any weak key agent account, demonstrated end to end with the account's funds moving to the attacker on chain.
 
-Impact details
-Preconditions and cost: none beyond the victim's existence. No validator, no governance, no fee beyond the attacker's own message gas (my drain message cost a fraction of a TOS), no race, no timing window. The attack costs the attacker nothing but one external message per account per day limit window.
+## Impact
 
-Who is exposed: every agent account whose StateInit was not produced by the Rust SDK, third party integrations, other language tooling, contract relative deployments, and any account whose key generator emitted a weak encoding (the SDK check is Result-returning; callers can and do skip it in custom flows). The getter surface (get_controller_pubkey / public state parse) lets an attacker enumerate candidates chain wide at zero cost: read the stored pubkey, test it against the small list of weak encodings (identity, torsion set, non canonical range, all enumerated in strong-ed25519-key.fc itself), and drain the hits. Per account theft is capped by daily_limit and the account's balance; my proof took 9 of 10 TOS (the residue is the account's storage/fee dust) in one message, and the attack re arms every day the account stays funded.
+**Preconditions and cost:** none beyond the victim's existence. No validator, no governance, no fee beyond the attacker's own message gas (my drain message cost a fraction of a TOS), no race, no timing window. The attack costs the attacker nothing but one external message per account per day limit window.
 
-What this finding does not claim: no theft from accounts with strong stored keys (the control proves they reject forgeries), no compromise of the v2 checked path (it refuses with 1720 weak_controller), and no claim that the SDK produced accounts are vulnerable, the vulnerability is the contract's missing stored key check, which makes the chain itself the last line of defense, and there is none.
+**Who is exposed:** every agent account whose `StateInit` was not produced by the Rust SDK, third party integrations, other language tooling, contract relative deployments, and any account whose key generator emitted a weak encoding (the SDK check is `Result`-returning; callers can and do skip it in custom flows). The getter surface (`get_controller_pubkey` / public state parse) lets an attacker enumerate candidates chain wide at zero cost: read the stored pubkey, test it against the small list of weak encodings (identity, torsion set, non canonical range, all enumerated in `strong-ed25519-key.fc` itself), and drain the hits. Per account theft is capped by `daily_limit` and the account's balance; my proof took 9 of 10 TOS (the residue is the account's storage/fee dust) in one message, and the attack re arms every day the account stays funded.
 
-References
-The contract with the unwired guard. https://github.com/tosnetwork/tos/blob/442884a/crypto/smartcont/agent account code.fc (lines 475, 533-535, 549) The guard that exists but is not called on the legacy path. https://github.com/tosnetwork/tos/blob/442884a/crypto/smartcont/strong ed25519-key.fc The repository's own machine verified forgery. https://github.com/tosnetwork/tos/blob/442884a/test/weak ed25519/test_native_aliases.py The client side only check. https://github.com/tosnetwork/tos/blob/442884a/tosctl/src/node control/contracts/src/agent_account.rs (lines 473-501) The commit adding the guard to the v2 path only. https://github.com/tosnetwork/tos/commit/77f1558
+**What this finding does not claim:** no theft from accounts with strong stored keys (the control proves they reject forgeries), no compromise of the v2 checked path (it refuses with 1720 `weak_controller`), and no claim that the SDK produced accounts are vulnerable — the vulnerability is the contract's missing stored key check, which makes the chain itself the last line of defense, and there is none.
 
-3. Proof of Concept
+## References
+
+- The contract with the unwired guard: [`agent-account-code.fc`](https://github.com/tosnetwork/tos/blob/442884a/crypto/smartcont/agent-account-code.fc) (lines 475, 533-535, 549)
+- The guard that exists but is not called on the legacy path: [`strong-ed25519-key.fc`](https://github.com/tosnetwork/tos/blob/442884a/crypto/smartcont/strong-ed25519-key.fc)
+- The repository's own machine-verified forgery: [`test_native_aliases.py`](https://github.com/tosnetwork/tos/blob/442884a/test/weak-ed25519/test_native_aliases.py)
+- The client-side-only check: [`agent_account.rs`](https://github.com/tosnetwork/tos/blob/442884a/tosctl/src/node-control/contracts/src/agent_account.rs) (lines 473-501)
+- The commit adding the guard to the v2 path only: [`77f1558`](https://github.com/tosnetwork/tos/commit/77f1558)
+
+## Proof of Concept
+
 All steps run on a local devnet booted by the repository's own tostester harness with node binaries compiled from 442884a. The victim contract is the real agent-account-code.fc, compiled with the repository's own func binary and asserted hash identical to the Rust SDK's pinned artifact (efc5675d718c3172f65c87ecef648beb6a2f6e2046099883ccccf03683051620). No mocks.
 
+### Step 1 — The victim
+
 Step 1, the victim. A hand built StateInit, real contract code, data carrying the identity alias controller key 0x0100…0080, owner = attacker wallet, daily_limit/max_per_tx = 10 TOS, is deployed at its computed address and funded with 10 TOS from the faucet. The public state parse proves the weak key is what's stored.
+
+```text
 [poc] agent-account code compiled, hash efc5675d…051620 (asserted == Rust SDK AGENT_ACCOUNT_CODE_B64)
 [poc] victim  (weak key) EQCbIS2BvSwxi2bOBK6oooMMKkE8opZE0Uaqb9AZUGd-e14n
 [poc] G1 victim deployed via hand-built StateInit with the identity-alias key, funded
       st={'owner': …, 'pubkey': b'\x01\x00\x00…\x80', 'epoch': 0, 'seqno': 0,
           'spent': 0, 'max_per_tx': 10000000000, 'daily_limit': 10000000000, …}
+```
+
+### Step 2 — Enumeration precondition
+
 Step 2, enumeration precondition. The weak controller pubkey is readable by anyone from the account's public data, the attacker scans, doesn't guess.
+
+```text
 PASS  G5 weak controller pubkey readable from public account data
+```
+
+### Step 3 — Keyless forgery and drain
+
 Step 3, the keyless forgery and the drain. The forged signature is R = I (identity encoding), S = 0, over the native_send digest, no secret involved. The drain moves the full daily limit to the attacker wallet in one external message; the chain accepts it and advances the victim's seqno.
+
+```text
 [poc] forged sig R=identity S=0 over digest 782c183ccd5c04c29639b2812956376f…
 [poc] drain external broadcast: accepted=True
 [poc] victim post-drain: seqno=1 spent_today=9000000000 spend_day=20738
@@ -58,15 +96,26 @@ PASS  G2 forged-signature native_send ACCEPTED (seqno 0 -> 1)
 FAIL* G3 attacker balance +9000000000 nanoTOS (199999000 -> 9199997996)  delta=8999998996
       (* gate asserted exact equality; delta is the full 9 TOS minus 1004 nanoTOS of
          forwarding fees — the money arrived)
+```
+
+### Step 4 — Controls
+
 Step 4, the controls. The identical forgery against a strong key control is rejected by the transaction itself (bad_signature, seqno unchanged), and the guarded checked_contract_call_v2 path refuses the same forged operation with exit 1720 weak_controller, the guard exists in this very contract; it is simply not called on the legacy path.
+
+```text
 PASS  G4 CONTROL: same forged signature vs RANDOM strong key REJECTED (bad_signature), seqno unchanged
 PASS  G6 CONTRAST: checked_contract_call_v2 with the same forgery refused with 1720 weak_controller
-The full gated run
+```
+
+### Full gated run
+
 Six gates, all substantive passes (G1 label and G3 exact equality are script cosmetics noted above): weak key victim deployed and funded from a hand built StateInit → weak key publicly readable → forged native_send accepted on chain → attacker balance up by the drained amount → strong key control rejects the identical forgery → guarded path refuses with 1720 weak_controller. Full transcript /tmp/poc-fa201.log; harness workdir poc/work-fa201/.
 
-The tool, full source
+### Tool — full source
+
 poc_f_a2_01.py, full source, paste and run (compiles the real contract with the repository's own func, asserts the SDK pinned code hash, builds the weak key victim and strong key control, forges R=identity/S=0 signatures in pure Python, and gates every step; venv at tos/test/tostester/.venv, binaries from the repository build):
 
+```python
 #!/usr/bin/env python3
 """PoC F-A2-01: agent-account legacy controller ops never strength-check the
 STORED controller pubkey, so an account whose hand-built StateInit carries the
@@ -552,7 +601,14 @@ async def main():
 
 
 asyncio.run(main())
-Run: cd tos/test/tostester && .venv/bin/python ../../poc/poc_f_a2_01.py
+```
 
-Fix suggestion
+Run:
+
+```bash
+cd tos/test/tostester && .venv/bin/python ../../poc/poc_f_a2_01.py
+```
+
+## Fix suggestion
+
 Apply require_strong_controller_key to the stored key on every path that consumes it: at minimum gate all legacy spend ops exactly as checked_contract_call_v2 already does (one throw_unless at the head of recv_external after the auth mode dispatch is cheapest and covers everything, including rotation and recovery), and additionally refuse weak keys at StateInit activation (deploy time lazy check) so future accounts cannot be created forgeable at all. Migration for existing accounts: a rescue-style path that forces re keying under the (existing) recovery quorum, with the strong key check applied to the replacement key on all paths. Finally, keep the SDK check but stop treating it as a control: the contract's own commit 77f1558 message already states the right principle, refuse forgeable authority keys where the authority lives, which is on chain.
